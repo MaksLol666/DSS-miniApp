@@ -102,18 +102,25 @@ STATIC_DIR = Path("static")
 
 @app.get("/{full_path:path}")
 async def serve_frontend(full_path: str):
+    print(f"!!! ВХОДЯЩИЙ ЗАПРОС: /{full_path}")
+    print(f"!!! ТЕКУЩАЯ ПАПКА: {os.getcwd()}")
+    print(f"!!! ФАЙЛЫ В ПАПКЕ: {os.listdir('.')}")
+
     if full_path.startswith("api/"):
+        print("!!! ОШИБКА: запрос к API попал в serve_frontend")
         raise HTTPException(status_code=404)
 
     file_path = STATIC_DIR / full_path
     if file_path.is_file():
+        print(f"!!! ОТДАЮ ФАЙЛ: {file_path}")
         return FileResponse(file_path)
 
     index = STATIC_DIR / "index.html"
     if index.is_file():
+        print("!!! ОТДАЮ INDEX.HTML")
         return FileResponse(index)
 
-    # Если фронтенд ещё не собран — отдаём 200, чтобы Bothost не убивал контейнер
+    print("!!! INDEX.HTML НЕ НАЙДЕН, ОТДАЮ JSON")
     return JSONResponse(
         status_code=200,
         content={"ok": True, "msg": "Frontend not built yet"}
