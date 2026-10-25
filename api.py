@@ -7,7 +7,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import select, text
 
 from database.db import init_db, SessionLocal, engine
@@ -86,8 +86,13 @@ app.include_router(profile.router)
 app.include_router(admin.router)
 
 
+# Явный эндпоинт для HealthCheck
 @app.get("/api/health")
 async def health():
+    return {"ok": True}
+
+@app.get("/health")
+async def health_root():
     return {"ok": True}
 
 
@@ -97,25 +102,22 @@ STATIC_DIR = Path("static")
 
 @app.get("/{full_path:path}")
 async def serve_frontend(full_path: str):
-    """SPA fallback: всё, что не /api/*, отдаём через static/index.html."""
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404)
 
-    # если запрошен конкретный файл из static/ — отдаём его
     file_path = STATIC_DIR / full_path
     if file_path.is_file():
         return FileResponse(file_path)
 
-    # иначе — index.html (React Router сам разберётся, какой компонент показать)
     index = STATIC_DIR / "index.html"
     if index.is_file():
         return FileResponse(index)
 
-    # frontend ещё не собран
-    return {
-        "ok": True,
-        "msg": "Frontend not built yet. Push to frontend/ and wait for GitHub Actions.",
-    }
+    # Если фронтенд ещё не собран — отдаём 200, чтобы Bothost не убивал контейнер
+    return JSONResponse(
+        status_code=200,
+        content={"ok": True, "msg": "Frontend not built yet"}
+    )
 
 
 # ============ ЗАПУСК ============
