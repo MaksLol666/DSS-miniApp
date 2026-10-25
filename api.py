@@ -129,5 +129,5 @@ async def serve_frontend(full_path: str):
 
 # ============ ЗАПУСК ============
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", "8080"))
+    port = int(os.getenv("PORT", "3000"))
     uvicorn.run(app, host="0.0.0.0", port=port)
