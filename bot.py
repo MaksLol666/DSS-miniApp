@@ -1,197 +1,155 @@
 import asyncio
 import logging
 
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
-from aiogram.types import (
-    Message, CallbackQuery, WebAppInfo,
-    InlineKeyboardMarkup, InlineKeyboardButton
-)
+from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramForbiddenError, TelegramNetworkError, TelegramServerError
+from aiogram.filters import Command, CommandStart
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 
-from config import BOT_TOKEN, MINIAPP_URL
+from config import ADMIN_ID, BOT_TOKEN, MINIAPP_URL, REVIEWS_CHANNEL_ID
 from database.db import SessionLocal
-from database.models import User, Order, OrderItem, Product, Promocode
-from sqlalchemy import select
+from database.models import User
 
-log = logging.getLogger("bot")
+log = logging.getLogger("dss.bot")
 BOT_USERNAME: str | None = None
+_bot: Bot | None = None
 
 
-def build_router(dp: Dispatcher):
+def _shop_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛍 Открыть магазин", web_app=WebAppInfo(url=MINIAPP_URL))]
+    ])
+
+
+async def send_message_safe(user_id: int, text: str) -> bool:
+    if _bot is None:
+        return False
+    try:
+        await _bot.send_message(user_id, text, disable_web_page_preview=True)
+        return True
+    except TelegramForbiddenError:
+        async with SessionLocal() as session:
+            record = await session.get(User, user_id)
+            if record:
+                record.is_unreachable = True
+                await session.commit()
+        return False
+    except Exception:
+        log.exception("Не удалось отправить сообщение Telegram user_id=%s", user_id)
+        return False
+
+
+async def notify_admin(text: str) -> bool:
+    if _bot is None or not ADMIN_ID:
+        log.warning("Не могу уведомить админа: Telegram-бот ещё не подключён")
+        return False
+    try:
+        await _bot.send_message(ADMIN_ID, text, reply_markup=_shop_keyboard(), disable_web_page_preview=True)
+        return True
+    except Exception:
+        log.exception("Не удалось уведомить администратора")
+        return False
+
+
+async def publish_review(text: str) -> bool:
+    if _bot is None or not REVIEWS_CHANNEL_ID:
+        return False
+    try:
+        try:
+            target: int | str = int(REVIEWS_CHANNEL_ID)
+        except ValueError:
+            target = REVIEWS_CHANNEL_ID
+        await _bot.send_message(target, text, disable_web_page_preview=True)
+        return True
+    except Exception:
+        log.exception("Не удалось опубликовать отзыв в канал")
+        return False
+
+
+def _register_handlers(dp: Dispatcher) -> None:
     @dp.message(CommandStart())
-    async def cmd_start(message: Message):
-        tg_id = message.from_user.id
+    async def start(message: Message) -> None:
+        if not message.from_user:
+            return
+        user_id = message.from_user.id
         username = message.from_user.username or message.from_user.full_name
-
-        args = message.text.split(maxsplit=1)
+        parts = (message.text or "").split(maxsplit=1)
         referrer_id = None
-        if len(args) > 1 and args[1].startswith("ref_"):
+        if len(parts) > 1 and parts[1].startswith("ref_"):
             try:
-                referrer_id = int(args[1][4:])
-                if referrer_id == tg_id:
-                    referrer_id = None
+                candidate = int(parts[1][4:])
+                if candidate != user_id:
+                    referrer_id = candidate
             except ValueError:
                 pass
 
-        async with SessionLocal() as s:
-            user = await s.get(User, tg_id)
-            if not user:
-                user = User(id=tg_id, username=username, referrer_id=referrer_id)
-                s.add(user)
-                await s.commit()
-                if referrer_id:
-                    try:
-                        await message.bot.send_message(
-                            referrer_id,
-                            f"🔔 По вашей ссылке зашёл новый пользователь: @{username or tg_id}"
-                        )
-                    except Exception:
-                        pass
+        new_ref = False
+        async with SessionLocal() as session:
+            record = await session.get(User, user_id)
+            if record is None:
+                referrer = await session.get(User, referrer_id) if referrer_id else None
+                record = User(id=user_id, username=username, referrer_id=referrer.id if referrer else None)
+                session.add(record)
+                new_ref = bool(referrer)
             else:
-                if user.is_unreachable:
-                    user.is_unreachable = False
-                    await s.commit()
+                record.username = username
+                record.is_unreachable = False
+                if record.referrer_id is None and referrer_id and not record.first_purchase_done:
+                    referrer = await session.get(User, referrer_id)
+                    if referrer:
+                        record.referrer_id = referrer.id
+                        new_ref = True
+            await session.commit()
 
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🛍 Открыть магазин", web_app=WebAppInfo(url=MINIAPP_URL))]
-        ])
+        if new_ref and referrer_id:
+            await send_message_safe(
+                referrer_id,
+                "🔔 По вашей ссылке пришёл новый пользователь. Бонус появится после его первой подтверждённой покупки.",
+            )
         await message.answer(
-            "💨 <b>Dead Smoke Store</b>\n\n"
-            "Нажми кнопку ниже, чтобы открыть магазин:",
-            reply_markup=kb,
-            parse_mode="HTML",
+            "💨 DEAD SMOKE STORE\n\nКаталог, корзина, промокоды и заказы — в магазине ниже.",
+            reply_markup=_shop_keyboard(),
         )
 
-    @dp.callback_query(F.data.startswith("order:"))
-    async def process_order(cb: CallbackQuery):
-        from config import ADMIN_ID, REFERRAL_MILESTONE, REFERRAL_MILESTONE_DISCOUNT
-        from utils.promo import gen_promo
-        from api_services.bot_notifier import notify_order_approved, notify_order_rejected
-        from keyboards.inline import admin_order_kb  # используем старое
-
-        if cb.from_user.id != ADMIN_ID:
-            await cb.answer("Не для тебя 🙂", show_alert=True)
+    @dp.message(Command("admin"))
+    async def admin(message: Message) -> None:
+        if not message.from_user or message.from_user.id != ADMIN_ID:
+            await message.answer("Эта команда доступна только администратору.")
             return
+        await message.answer("🛠 Админ-панель доступна в Mini App.", reply_markup=_shop_keyboard())
 
-        _, action, order_id = cb.data.split(":")
-        order_id = int(order_id)
-
-        async with SessionLocal() as s:
-            order = await s.get(Order, order_id)
-            if not order or order.status != "pending":
-                await cb.answer("Заказ уже обработан.", show_alert=True)
-                return
-
-            items = (await s.execute(
-                select(OrderItem, Product).join(Product, OrderItem.product_id == Product.id)
-                .where(OrderItem.order_id == order_id)
-            )).all()
-            buyer = await s.get(User, order.user_id)
-
-            if action == "approve":
-                order.status = "approved"
-                for _, p in items:
-                    await s.delete(p)
-                if buyer:
-                    buyer.balance = (buyer.balance or 0) + order.total
-                    if buyer.referrer_id and not buyer.first_purchase_done:
-                        bonus = round(order.total * 0.15, 2)
-                        code = gen_promo()
-                        while await s.get(Promocode, code):
-                            code = gen_promo()
-                        s.add(Promocode(code=code, owner_id=buyer.referrer_id,
-                                        kind="fixed", amount=bonus, created_by="ref"))
-                        ref_user = await s.get(User, buyer.referrer_id)
-                        if ref_user:
-                            ref_user.referrals_count += 1
-                            if ref_user.referrals_count >= ref_user.next_bonus_at:
-                                mc = gen_promo()
-                                while await s.get(Promocode, mc):
-                                    mc = gen_promo()
-                                s.add(Promocode(code=mc, owner_id=buyer.referrer_id,
-                                                kind="percent", amount=REFERRAL_MILESTONE_DISCOUNT,
-                                                created_by="ref"))
-                                ref_user.next_bonus_at += REFERRAL_MILESTONE
-                                try:
-                                    await cb.bot.send_message(
-                                        buyer.referrer_id,
-                                        f"🎉 Ты пригласил {ref_user.referrals_count} купивших друзей!\n"
-                                        f"Промокод на −{int(REFERRAL_MILESTONE_DISCOUNT)}%:\n<code>{mc}</code>",
-                                        parse_mode="HTML"
-                                    )
-                                except Exception:
-                                    pass
-                        try:
-                            await cb.bot.send_message(
-                                buyer.referrer_id,
-                                f"🎁 Твой реферал совершил первую покупку!\n"
-                                f"Промокод на <b>{int(bonus)}₽</b>:\n<code>{code}</code>",
-                                parse_mode="HTML"
-                            )
-                        except Exception:
-                            pass
-                    buyer.first_purchase_done = True
-
-                if order.promo_codes:
-                    for pc in order.promo_codes.split(","):
-                        pr = await s.get(Promocode, pc)
-                        if pr:
-                            pr.used_count += 1
-                            if pr.used_count >= pr.max_uses:
-                                pr.used = True
-
-                if buyer:
-                    await notify_order_approved(buyer.id, order_id)
-                await cb.message.edit_text(
-                    cb.message.html_text + "\n\n✅ <b>Подтверждён</b>",
-                    parse_mode="HTML"
-                )
-            else:
-                order.status = "rejected"
-                for _, p in items:
-                    p.in_stock = True
-                if buyer:
-                    await notify_order_rejected(buyer.id, order_id)
-                await cb.message.edit_text(
-                    cb.message.html_text + "\n\n❌ <b>Отклонён</b>",
-                    parse_mode="HTML"
-                )
-
-            await s.commit()
+    @dp.message(Command("help"))
+    async def help_command(message: Message) -> None:
+        await message.answer(
+            "Команды:\n/start — открыть магазин\n/admin — открыть админ-панель\n/help — помощь"
+        )
 
 
-async def start_bot():
-    """Запускает polling; временные ошибки Telegram не должны навсегда останавливать бота."""
-    global BOT_USERNAME
+async def start_bot() -> None:
+    global _bot, BOT_USERNAME
+    if not BOT_TOKEN:
+        log.warning("BOT_TOKEN не задан; polling отключён, API продолжает работу")
+        return
 
-    from aiogram.exceptions import TelegramNetworkError, TelegramServerError
-
-    bot = Bot(token=BOT_TOKEN)
-    dp = Dispatcher()
-    try:
-        # Telegram иногда временно отвечает 502/503. Повторяем попытку вместо
-        # завершения фоновой задачи и оставляем API доступным.
-        while True:
-            try:
-                me = await bot.get_me()
-                BOT_USERNAME = me.username
-                log.info("Bot connected: @%s", BOT_USERNAME)
-                break
-            except (TelegramNetworkError, TelegramServerError) as exc:
-                log.warning("Telegram временно недоступен (%s); повтор через 5 секунд", exc)
-                await asyncio.sleep(5)
-
-        from api_services.bot_notifier import set_bot
-        set_bot(bot)
-
-        build_router(dp)
-
-        await bot.delete_webhook(drop_pending_updates=True)
-        await dp.start_polling(bot)
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        log.exception("Фоновая задача Telegram-бота завершилась с ошибкой")
-        raise
-    finally:
-        await bot.session.close()
+    while True:
+        client = Bot(token=BOT_TOKEN)
+        try:
+            me = await client.get_me()
+            BOT_USERNAME = me.username
+            _bot = client
+            dispatcher = Dispatcher()
+            _register_handlers(dispatcher)
+            log.info("Bot started: @%s", BOT_USERNAME)
+            # Do not discard pending Telegram updates on a normal restart.
+            await dispatcher.start_polling(client)
+        except asyncio.CancelledError:
+            raise
+        except (TelegramNetworkError, TelegramServerError) as exc:
+            log.warning("Telegram временно недоступен: %s; повтор через 5 секунд", exc)
+        except Exception:
+            log.exception("Polling завершился с ошибкой")
+        finally:
+            if _bot is client:
+                _bot = None
+            await client.session.close()
+        await asyncio.sleep(5)
