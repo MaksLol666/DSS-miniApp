@@ -161,22 +161,37 @@ def build_router(dp: Dispatcher):
 
 
 async def start_bot():
-    """Запускает polling бота. Вызывается из api.py через asyncio.create_task."""
+    """Запускает polling; временные ошибки Telegram не должны навсегда останавливать бота."""
     global BOT_USERNAME
+
+    from aiogram.exceptions import TelegramNetworkError, TelegramServerError
 
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
+    try:
+        # Telegram иногда временно отвечает 502/503. Повторяем попытку вместо
+        # завершения фоновой задачи и оставляем API доступным.
+        while True:
+            try:
+                me = await bot.get_me()
+                BOT_USERNAME = me.username
+                log.info("Bot connected: @%s", BOT_USERNAME)
+                break
+            except (TelegramNetworkError, TelegramServerError) as exc:
+                log.warning("Telegram временно недоступен (%s); повтор через 5 секунд", exc)
+                await asyncio.sleep(5)
 
-    # получаем username бота (для реф-ссылок)
-    me = await bot.get_me()
-    BOT_USERNAME = me.username
-    log.info(f"Bot started: @{BOT_USERNAME}")
+        from api_services.bot_notifier import set_bot
+        set_bot(bot)
 
-    # подключаем notifier (для API)
-    from api_services.bot_notifier import set_bot
-    set_bot(bot)
+        build_router(dp)
 
-    build_router(dp)
-
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("Фоновая задача Telegram-бота завершилась с ошибкой")
+        raise
+    finally:
+        await bot.session.close()
