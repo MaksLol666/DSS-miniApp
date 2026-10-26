@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from api_services.security import rate_limit_middleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -16,7 +16,7 @@ from database.models import Category, User
 from config import CATEGORIES, ADMIN_ID
 from api_services.auth import get_current_user
 
-from api_services import products, cart, orders, profile, admin
+from api_services import products, cart, orders, profile, admin, captcha
 import bot as bot_module
 
 logging.basicConfig(
@@ -87,10 +87,11 @@ app.include_router(cart.router)
 app.include_router(orders.router)
 app.include_router(profile.router)
 app.include_router(admin.router)
+app.include_router(captcha.router)
 
 
 @app.post("/api/auth")
-async def authenticate_miniapp(user=__import__("fastapi").Depends(get_current_user)):
+async def authenticate_miniapp(user=Depends(get_current_user)):
     """Authenticate signed Telegram initData and ensure the user exists."""
     async with SessionLocal() as s:
         db_user = await s.get(User, user["id"])
