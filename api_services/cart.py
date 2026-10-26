@@ -92,7 +92,9 @@ async def add_to_cart(req: CartAddRequest, user=Depends(get_current_user)):
         )).scalar_one_or_none()
 
         if existing:
-            raise HTTPException(400, "Уже в корзине")
+            # Idempotent behavior: repeated taps do not create duplicates or
+            # punish a normal user for a double-click.
+            return await _render_cart(uid)
 
         s.add(CartItem(user_id=uid, product_id=req.product_id, reserved=False))
         await s.commit()
