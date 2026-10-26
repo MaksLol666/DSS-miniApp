@@ -3,34 +3,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-DB_URL = "sqlite+aiosqlite:///data/shop.db"
 
-# URL MiniApp — заполни после деплоя (Bothost выдаст поддомен)
-MINIAPP_URL = os.getenv("MINIAPP_URL", "https://example.bothost.ru")
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)).strip())
+    except (TypeError, ValueError):
+        return default
 
-if not BOT_TOKEN:
-    raise RuntimeError("❌ BOT_TOKEN не задан!")
-if not ADMIN_ID:
-    raise RuntimeError("❌ ADMIN_ID не задан!")
 
-CATEGORIES = [
-    "Жижа",
-    "Устройства",
-    "Одноразки",
-    "Снюс",
-    "Пластинки",
-    "Расходники",
-    "Наборы",
-]
-
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+ADMIN_ID = _int_env("ADMIN_ID", 0)
+MINIAPP_URL = os.getenv("MINIAPP_URL", "https://dss-shop.bothost.ru").strip()
+# Keep the same relative database path as the original project to preserve data.
+DB_URL = os.getenv("DB_URL", "sqlite+aiosqlite:///data/shop.db").strip()
+CATEGORIES = ["Жижа", "Устройства", "Одноразки", "Снюс", "Пластинки", "Расходники", "Наборы"]
 REFERRAL_BONUS_PERCENT = 15
 REFERRAL_MILESTONE = 10
 REFERRAL_MILESTONE_DISCOUNT = 10
 MAX_PROMOS_PER_ORDER = 2
-
-REVIEWS_CHANNEL_ID = -1004357829679
-REVIEWS_CHANNEL_USERNAME = "@OTZOV_DSS"
-
 DELIVERY_PRICE = 500
+REVIEWS_CHANNEL_ID = os.getenv("REVIEWS_CHANNEL_ID", "-1004357829679").strip()
+REVIEWS_CHANNEL_USERNAME = os.getenv("REVIEWS_CHANNEL_USERNAME", "@OTZOV_DSS").strip()
