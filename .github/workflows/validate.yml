@@ -25,3 +25,22 @@ jobs:
       - run: python -m compileall -q api.py bot.py main.py config.py database
       - run: node --check static/app.js
       - run: python -c "import api; assert any(getattr(r, 'path', None) == '/api/health' for r in api.app.routes); assert any(getattr(r, 'path', None) == '/' for r in api.app.routes); print('API import and route checks passed')"
+      - name: Smoke test HTTP routes
+        shell: bash
+        run: |
+          set -e
+          python api.py > /tmp/dss-api.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health > /tmp/dss-health.json; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q '"ok":true' /tmp/dss-health.json
+          curl -fsS http://127.0.0.1:3000/ | grep -q 'Dead Smoke Store'
+          curl -fsS 'http://127.0.0.1:3000/app.js?v=2' | grep -q 'function init'
+          curl -fsS 'http://127.0.0.1:3000/styles.css?v=2' | grep -q ':root'
+          echo "Health endpoint, HTML, JavaScript and CSS all respond correctly."
+          cat /tmp/dss-api.log
