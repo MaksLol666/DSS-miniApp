@@ -57,6 +57,8 @@
 
       function renderWidget() {
         initGateMarkup();
+        document.getElementById('ddg-captcha-slot').innerHTML = '';
+        widgetId = null;
         if (!siteKey) {
           errorNode.textContent = 'CAPTCHA не настроена. Сообщи администратору.';
           retryButton.style.display = 'block';
