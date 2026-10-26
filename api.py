@@ -11,8 +11,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import select, text
 
 from database.db import init_db, SessionLocal, engine
-from database.models import Category
-from config import CATEGORIES
+from database.models import Category, User
+from config import CATEGORIES, ADMIN_ID
+from api_services.auth import get_current_user
 
 from api_services import products, cart, orders, profile, admin
 import bot as bot_module
@@ -86,6 +87,31 @@ app.include_router(profile.router)
 app.include_router(admin.router)
 
 
+@app.post("/api/auth")
+async def authenticate_miniapp(user=__import__("fastapi").Depends(get_current_user)):
+    """Authenticate signed Telegram initData and ensure the user exists."""
+    async with SessionLocal() as s:
+        db_user = await s.get(User, user["id"])
+        if db_user and db_user.is_banned:
+            raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
+        if not db_user:
+            db_user = User(
+                id=user["id"],
+                username=user.get("username") or user.get("first_name"),
+            )
+            s.add(db_user)
+            await s.commit()
+        elif user.get("username") and db_user.username != user.get("username"):
+            db_user.username = user.get("username")
+            await s.commit()
+        return {
+            "user_id": user["id"],
+            "username": db_user.username,
+            "is_admin": user["id"] == ADMIN_ID,
+            "is_banned": False,
+        }
+
+
 # Явный эндпоинт для HealthCheck
 @app.get("/api/health")
 async def health():
@@ -97,34 +123,23 @@ async def health_root():
 
 
 # ============ FRONTEND (SPA fallback) ============
-STATIC_DIR = Path("static")
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 @app.get("/{full_path:path}")
 async def serve_frontend(full_path: str):
-    print(f"!!! ВХОДЯЩИЙ ЗАПРОС: /{full_path}")
-    print(f"!!! ТЕКУЩАЯ ПАПКА: {os.getcwd()}")
-    print(f"!!! ФАЙЛЫ В ПАПКЕ: {os.listdir('.')}")
-
     if full_path.startswith("api/"):
-        print("!!! ОШИБКА: запрос к API попал в serve_frontend")
         raise HTTPException(status_code=404)
 
     file_path = STATIC_DIR / full_path
     if file_path.is_file():
-        print(f"!!! ОТДАЮ ФАЙЛ: {file_path}")
         return FileResponse(file_path)
 
     index = STATIC_DIR / "index.html"
     if index.is_file():
-        print("!!! ОТДАЮ INDEX.HTML")
         return FileResponse(index)
 
-    print("!!! INDEX.HTML НЕ НАЙДЕН, ОТДАЮ JSON")
-    return JSONResponse(
-        status_code=200,
-        content={"ok": True, "msg": "Frontend not built yet"}
-    )
+    raise HTTPException(status_code=404, detail="Frontend build not found")
 
 
 # ============ ЗАПУСК ============
