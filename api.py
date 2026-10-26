@@ -7,6 +7,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from api_services.security import rate_limit_middleware
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import select, text
 
@@ -71,6 +72,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.middleware("http")(rate_limit_middleware)
 
 app.add_middleware(
     CORSMiddleware,
