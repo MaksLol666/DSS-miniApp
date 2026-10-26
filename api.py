@@ -133,9 +133,14 @@ async def serve_frontend(full_path: str):
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404)
 
-    file_path = STATIC_DIR / full_path
-    if file_path.is_file():
+    # Resolve the path before serving to prevent traversal outside /static.
+    file_path = (STATIC_DIR / full_path).resolve()
+    if file_path != STATIC_DIR.resolve() and STATIC_DIR.resolve() in file_path.parents and file_path.is_file():
         return FileResponse(file_path)
+
+    # Missing assets should be real 404s, not HTML responses.
+    if Path(full_path).suffix:
+        raise HTTPException(status_code=404, detail="Static asset not found")
 
     index = STATIC_DIR / "index.html"
     if index.is_file():
