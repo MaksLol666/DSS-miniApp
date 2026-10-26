@@ -17,9 +17,7 @@ router = APIRouter(prefix="/api/captcha", tags=["captcha"])
 
 SITE_KEY = os.getenv("DDOS_GUARD_SITE_KEY", "").strip()
 PRIVATE_KEY = os.getenv("DDOS_GUARD_SECRET_KEY", "").strip()
-VERIFY_URL = os.getenv(
-    "DDOS_GUARD_VERIFY_URL", "https://captcha.ddos-guard.net/siteverify"
-).strip()
+VERIFY_URL = os.getenv("DDOS_GUARD_VERIFY_URL", "").strip() or "https://captcha.ddos-guard.net/siteverify"
 COOKIE_NAME = "ddg_captcha_session"
 SESSION_TTL = max(3600, int(os.getenv("DDOS_GUARD_SESSION_TTL_SECONDS", "2592000")))
 SESSION_SECRET = os.getenv("DDOS_GUARD_SESSION_SECRET", "").strip()
