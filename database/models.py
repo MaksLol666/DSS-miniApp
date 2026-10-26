@@ -1,9 +1,7 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import (
-    BigInteger, String, Integer, Float, Boolean,
-    ForeignKey, DateTime, func
-)
 from datetime import datetime
+
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
@@ -14,10 +12,9 @@ class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Legacy name: cumulative spending on approved orders.
     balance: Mapped[float] = mapped_column(Float, default=0.0)
-    referrer_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("users.id"), nullable=True
-    )
+    referrer_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
     first_purchase_done: Mapped[bool] = mapped_column(Boolean, default=False)
     referrals_count: Mapped[int] = mapped_column(Integer, default=0)
     next_bonus_at: Mapped[int] = mapped_column(Integer, default=10)
@@ -58,7 +55,6 @@ class Order(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending")
     promo_codes: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
     delivery_type: Mapped[str] = mapped_column(String(16), default="pickup")
     delivery_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     delivery_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -83,6 +79,15 @@ class Promocode(Base):
     created_by: Mapped[str] = mapped_column(String(8), default="system")
     max_uses: Mapped[int] = mapped_column(Integer, default=1)
     used_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class CartPromo(Base):
+    __tablename__ = "cart_promos"
+    __table_args__ = (UniqueConstraint("user_id", "code", name="uq_cart_promos_user_code"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    code: Mapped[str] = mapped_column(ForeignKey("promocodes.code"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class Review(Base):
