@@ -60,6 +60,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     await run_migrations()
     await seed_categories()
+    log.info("Frontend path: %s; index.html exists: %s", STATIC_DIR, (STATIC_DIR / "index.html").is_file())
 
     bot_task = asyncio.create_task(bot_module.start_bot())
     log.info("💨 Started bot + API")
@@ -127,6 +128,15 @@ async def health_root():
 
 # ============ FRONTEND (SPA fallback) ============
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@app.get("/")
+async def serve_home():
+    index = STATIC_DIR / "index.html"
+    if index.is_file():
+        return FileResponse(index)
+    log.error("Frontend entrypoint is missing: %s", index)
+    raise HTTPException(status_code=503, detail="Frontend files are missing from the deployed app")
 
 
 @app.get("/{full_path:path}")
