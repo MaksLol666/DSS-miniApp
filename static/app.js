@@ -7,7 +7,7 @@ const state = {
   user: null, page: 'catalog', categories: [], products: [], cart: {items: [], promos: []},
   profile: null, orders: [], promos: [], top: [], topref: [], search: '', category: 0,
   delivery: 'pickup', reviewOrder: 0, leaderKind: 'buyers', adminTab: 'orders',
-  adminProducts: [], adminOrders: [], adminUsers: [], adminPromos: [], adminStats: null, adminQuery: ''
+  adminProducts: [], adminOrders: [], adminUsers: [], adminPromos: [], adminReviews: [], adminStats: null, adminQuery: ''
 };
 let toastTimer = 0;
 let captchaPromise = null;
@@ -269,7 +269,7 @@ function renderLeaders() {
   return '<div class="section-head"><div><h1 class="section-title">' + title + '</h1><div class="section-sub">Топ-10 участников</div></div></div><div class="card">' + list.map((u, i) => '<div class="item-row"><div class="item-thumb">' + (i + 1) + '</div><div class="item-info"><div class="item-title">' + esc(u.username ? '@' + String(u.username).replace('@', '') : 'Пользователь ' + u.user_id) + '</div><div class="item-sub">ID ' + esc(u.user_id) + '</div></div><b class="discount">' + (refs ? esc(u.value) + ' чел.' : money(u.value)) + '</b></div>').join('') + '</div><button class="secondary full-button" data-action="go" data-page="profile">Назад в профиль</button>';
 }
 function adminTabs() {
-  const tabs = [['orders', 'Заказы'], ['products', 'Товары'], ['users', 'Пользователи'], ['promos', 'Промокоды'], ['stats', 'Статистика'], ['broadcast', 'Рассылка']];
+  const tabs = [['orders', 'Заказы'], ['products', 'Товары'], ['users', 'Пользователи'], ['promos', 'Промокоды'], ['reviews', 'Отзывы'], ['stats', 'Статистика'], ['broadcast', 'Рассылка']];
   return '<div class="tabs">' + tabs.map(t => '<button class="tab ' + (state.adminTab === t[0] ? 'active' : '') + '" data-action="admin-tab" data-tab="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>';
 }
 function renderAdmin() {
@@ -294,6 +294,8 @@ function renderAdmin() {
   } else if (state.adminTab === 'promos') {
     body = '<form id="admin-promo-form" class="card"><b>Создать промокод</b><label class="field-label">Код (пусто = сгенерировать)</label><input class="field" name="code" maxlength="16" placeholder="DSS2026"><div class="form-row"><div><label class="field-label">Тип скидки</label><select class="field" name="kind"><option value="fixed">Сумма, ₽</option><option value="percent">Процент, %</option></select></div><div><label class="field-label">Размер</label><input class="field" name="amount" type="number" min="1" step="1" required></div></div><div class="form-row"><div><label class="field-label">Владелец (0 = все)</label><input class="field" name="owner_id" type="number" min="0" value="0" required></div><div><label class="field-label">Активаций</label><input class="field" name="max_uses" type="number" min="1" value="1" required></div></div><button class="primary" type="submit" style="margin-top:12px">Создать промокод</button></form>' +
       (state.adminPromos || []).map(p => '<article class="list-card"><div class="row"><b>' + esc(p.code) + '</b><span class="price">' + (p.kind === 'percent' ? '−' + esc(p.amount) + '%' : '−' + money(p.amount)) + '</span></div><div class="item-sub">Владелец ' + p.owner_id + ' · использований ' + p.used_count + '/' + p.max_uses + ' · ' + esc(p.created_by) + (p.used ? ' · исчерпан' : '') + '</div><button class="danger" data-action="delete-promo" data-code="' + esc(p.code) + '" style="margin-top:10px">Удалить</button></article>').join('');
+  } else if (state.adminTab === 'reviews') {
+    body = (state.adminReviews || []).length ? state.adminReviews.map(r => '<article class="list-card"><div class="row"><b>Заказ №' + esc(r.order_id) + '</b><span class="discount">' + '★'.repeat(Number(r.rating || 0)) + '☆'.repeat(5 - Number(r.rating || 0)) + '</span></div><div class="item-sub" style="margin:6px 0 10px">Пользователь ID ' + esc(r.user_id) + ' · ' + dateText(r.published_at) + '</div><p>' + esc(r.text || 'Без текста') + '</p></article>').join('') : '<div class="empty">Отзывов пока нет.</div>';
   } else if (state.adminTab === 'stats') {
     const s = state.adminStats;
     body = s ? '<div class="metric-grid"><div class="metric"><div class="metric-value">' + s.total_users + '</div><div class="metric-label">Пользователей</div></div><div class="metric"><div class="metric-value">' + s.total_orders + '</div><div class="metric-label">Подтверждено заказов</div></div><div class="metric"><div class="metric-value">' + s.pending_orders + '</div><div class="metric-label">Ожидают решения</div></div><div class="metric"><div class="metric-value">' + money(s.total_revenue) + '</div><div class="metric-label">Общая выручка</div></div></div><div class="card"><div class="summary-line"><span>За сутки</span><b>' + money(s.revenue_day) + '</b></div><div class="summary-line"><span>За неделю</span><b>' + money(s.revenue_week) + '</b></div><div class="summary-line"><span>Средний чек</span><b>' + money(s.avg_check) + '</b></div><div class="divider"></div><b>Популярные товары</b>' + (s.top_products || []).map((p, i) => '<div class="summary-line"><span>' + (i + 1) + '. ' + esc(p.brand) + ' — ' + esc(p.flavor) + '</span><b>' + p.count + '</b></div>').join('') + '</div>' : '<div class="empty">Загружаем статистику…</div>';
@@ -314,6 +316,7 @@ async function loadAdminTab(tab) {
   if (tab === 'products') state.adminProducts = await api('/api/admin/products');
   if (tab === 'users') state.adminUsers = await api('/api/admin/users' + (state.adminQuery ? '?q=' + encodeURIComponent(state.adminQuery) : ''));
   if (tab === 'promos') state.adminPromos = await api('/api/admin/promos');
+  if (tab === 'reviews') state.adminReviews = await api('/api/admin/reviews');
   if (tab === 'stats') state.adminStats = await api('/api/admin/stats');
 }
 async function loadPage(page) {
