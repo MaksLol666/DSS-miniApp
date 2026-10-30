@@ -37,6 +37,7 @@ class Product(Base):
     flavor: Mapped[str] = mapped_column(String(64))
     price: Mapped[float] = mapped_column(Float)
     in_stock: Mapped[bool] = mapped_column(Boolean, default=True)
+    stock_qty: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class CartItem(Base):
