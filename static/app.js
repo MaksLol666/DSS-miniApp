@@ -75,10 +75,14 @@ function showCaptcha() {
       if (captchaReject) captchaReject(new Error('Проверка CAPTCHA отменена.'));
     };
     document.getElementById('captcha-retry').onclick = function () {
-      const sdk = window.grecaptcha || window.DDGcaptcha || window.dcaptcha;
+      const sdk = getCaptchaSdk();
       try {
-        if (sdk && typeof sdk.reset === 'function' && captchaWidget !== null) sdk.reset(captchaWidget);
-        else mountCaptcha();
+        if (sdk && typeof sdk.api.reset === 'function' && captchaWidget !== null) {
+          const widgetId = captchaWidget && typeof captchaWidget === 'object' && 'id' in captchaWidget ? captchaWidget.id : captchaWidget;
+          sdk.api.reset(widgetId);
+        } else {
+          mountCaptcha();
+        }
       } catch (_e) { mountCaptcha(); }
     };
     fetch('/api/captcha/config').then(r => r.json()).then(config => {
@@ -112,35 +116,57 @@ function showCaptcha() {
   });
   return captchaPromise;
 }
+function getCaptchaSdk() {
+  // DDoS-Guard's CAPTCHA integration may expose SPCaptcha rather than reCAPTCHA's grecaptcha.
+  const candidates = [
+    ['spcaptcha', window.SPCaptcha],
+    ['ddgcaptcha', window.DDGCaptcha],
+    ['ddg-captcha', window.DDGcaptcha],
+    ['dcaptcha', window.dcaptcha],
+    ['grecaptcha', window.grecaptcha],
+    ['ddcaptcha', window.ddcaptcha]
+  ];
+  for (const [name, apiObject] of candidates) {
+    if (apiObject && typeof apiObject.render === 'function') return { name, api: apiObject };
+  }
+  return null;
+}
+
 function mountCaptcha() {
   const target = document.getElementById('captcha-widget');
   if (!target) return;
-  const sdk = window.grecaptcha || window.DDGcaptcha || window.dcaptcha;
-  if (!sdk || typeof sdk.render !== 'function') {
+  const sdk = getCaptchaSdk();
+  if (!sdk) {
     const status = document.getElementById('captcha-status');
-    if (status) status.textContent = 'SDK CAPTCHA загрузился, но метод render не найден.';
+    if (status) {
+      const found = ['SPCaptcha', 'DDGCaptcha', 'DDGcaptcha', 'dcaptcha', 'ddcaptcha', 'grecaptcha']
+        .filter(name => Boolean(window[name]));
+      status.textContent = found.length
+        ? 'SDK CAPTCHA загружен, но API render недоступен (' + found.join(', ') + '). Проверь версию SDK DDoS-Guard.'
+        : 'SDK CAPTCHA загрузился, но API виджета не найден. Проверь подключение SDK DDoS-Guard.';
+    }
     return;
   }
   try {
     target.innerHTML = '';
-    captchaWidget = sdk.render(target, {
-      sitekey: captchaSiteKey,
-      theme: 'dark',
-      callback: function (token) {
-        api('/api/captcha/verify', { method: 'POST', body: JSON.stringify({ token }) }, false).then(() => {
-          const done = captchaResolve;
-          document.getElementById('modal-root').innerHTML = '';
-          if (done) done(true);
-        }).catch(error => {
-          const status = document.getElementById('captcha-status');
-          if (status) status.textContent = error.message || 'Проверка не пройдена.';
-        });
-      },
-      'expired-callback': function () {
+    const onSuccess = function (token) {
+      api('/api/captcha/verify', { method: 'POST', body: JSON.stringify({ token }) }, false).then(() => {
+        const done = captchaResolve;
+        document.getElementById('modal-root').innerHTML = '';
+        if (done) done(true);
+      }).catch(error => {
         const status = document.getElementById('captcha-status');
-        if (status) status.textContent = 'Проверка истекла. Пройди её ещё раз.';
-      }
-    });
+        if (status) status.textContent = error.message || 'Проверка не пройдена.';
+      });
+    };
+    const onExpired = function () {
+      const status = document.getElementById('captcha-status');
+      if (status) status.textContent = 'Проверка истекла. Пройди её ещё раз.';
+    };
+    const options = sdk.name === 'spcaptcha'
+      ? { siteKey: captchaSiteKey, language: 'ru', callback: onSuccess, onExpired }
+      : { sitekey: captchaSiteKey, theme: 'dark', callback: onSuccess, 'expired-callback': onExpired };
+    captchaWidget = sdk.api.render(target, options);
   } catch (error) {
     const status = document.getElementById('captcha-status');
     if (status) status.textContent = 'Не удалось показать CAPTCHA: ' + error.message;
