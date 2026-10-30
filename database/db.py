@@ -20,3 +20,9 @@ SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=
 async def init_db() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        if DB_URL.startswith("sqlite"):
+            result = await connection.exec_driver_sql("PRAGMA table_info(products)")
+            columns = {row[1] for row in result.fetchall()}
+            if "stock_qty" not in columns:
+                await connection.exec_driver_sql("ALTER TABLE products ADD COLUMN stock_qty INTEGER NOT NULL DEFAULT 1")
+            await connection.exec_driver_sql("UPDATE products SET stock_qty = CASE WHEN in_stock = 1 THEN 1 ELSE 0 END WHERE stock_qty IS NULL OR stock_qty < 0")
