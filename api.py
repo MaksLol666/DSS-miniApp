@@ -130,6 +130,7 @@ class ProductInput(BaseModel):
     brand: str = Field(min_length=1, max_length=64)
     flavor: str = Field(min_length=1, max_length=64)
     price: float = Field(gt=0, le=10000000)
+    stock_qty: int = Field(default=1, ge=0, le=1000000)
 
 
 class ProductPatch(BaseModel):
@@ -138,6 +139,7 @@ class ProductPatch(BaseModel):
     flavor: str | None = Field(default=None, min_length=1, max_length=64)
     price: float | None = Field(default=None, gt=0, le=10000000)
     in_stock: bool | None = None
+    stock_qty: int | None = Field(default=None, ge=0, le=1000000)
 
 
 class ProductId(BaseModel):
@@ -340,11 +342,11 @@ async def categories(user: dict = Depends(current_user)):
 @app.get("/api/products")
 async def products(category_id: int | None = None, user: dict = Depends(current_user)):
     async with SessionLocal() as session:
-        query = select(Product).where(Product.in_stock.is_(True))
+        query = select(Product).where(Product.in_stock.is_(True), Product.stock_qty > 0)
         if category_id is not None:
             query = query.where(Product.category_id == category_id)
         rows = (await session.execute(query.order_by(Product.category_id, Product.number))).scalars().all()
-        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock)} for p in rows]
+        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0)} for p in rows]
 
 
 @app.get("/api/cart")
@@ -356,7 +358,7 @@ async def get_cart(user: dict = Depends(current_user)):
 async def cart_add(data: ProductId, user: dict = Depends(current_user)):
     async with SessionLocal() as session:
         p = await session.get(Product, data.product_id)
-        if not p or not p.in_stock:
+        if not p or not p.in_stock or int(p.stock_qty or 0) <= 0:
             raise HTTPException(409, "Товар больше недоступен.")
         existing = (await session.execute(select(CartItem.id).where(CartItem.user_id == user["id"], CartItem.product_id == p.id))).first()
         if not existing:
@@ -424,8 +426,8 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         if not rows:
             raise HTTPException(400, "Корзина пуста.")
         for _, p in rows:
-            if not p.in_stock:
-                raise HTTPException(409, f"Товар {p.brand} — {p.flavor} больше недоступен.")
+            if not p.in_stock or int(p.stock_qty or 0) <= 0:
+                raise HTTPException(409, f"Товар {p.brand} — {p.flavor} закончился.")
         items = [{"product_id": p.id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price)} for _, p in rows]
         codes = await _promo_codes(session, user["id"])
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
@@ -442,7 +444,8 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         await session.flush()
         for _, p in rows:
             session.add(OrderItem(order_id=order.id, product_id=p.id, price=float(p.price)))
-            p.in_stock = False
+            p.stock_qty = max(0, int(p.stock_qty or 0) - 1)
+            p.in_stock = p.stock_qty > 0
         await session.execute(delete(CartItem).where(CartItem.user_id == user["id"]))
         await session.execute(delete(CartPromo).where(CartPromo.user_id == user["id"]))
         await session.commit()
@@ -582,7 +585,8 @@ async def _process_order(order_id: int, approve: bool) -> dict:
         else:
             order.status = "rejected"
             for _, product in items:
-                product.in_stock = True
+                product.stock_qty = int(product.stock_qty or 0) + 1
+                product.in_stock = product.stock_qty > 0
             if buyer:
                 notifications.append((buyer.id, f"❌ Заказ №{order_id} отклонён администратором."))
         await session.commit()
@@ -605,7 +609,7 @@ async def admin_product_create(data: ProductInput, user: dict = Depends(admin_us
         if not await session.get(Category, data.category_id):
             raise HTTPException(404, "Категория не найдена.")
         n = (await session.execute(select(func.max(Product.number)).where(Product.category_id == data.category_id))).scalar() or 0
-        product = Product(category_id=data.category_id, number=n + 1, brand=data.brand.strip(), flavor=data.flavor.strip(), price=data.price, in_stock=True)
+        product = Product(category_id=data.category_id, number=n + 1, brand=data.brand.strip(), flavor=data.flavor.strip(), price=data.price, stock_qty=data.stock_qty, in_stock=data.stock_qty > 0)
         session.add(product)
         await session.commit()
         await session.refresh(product)
@@ -624,6 +628,12 @@ async def admin_product_update(product_id: int, data: ProductPatch, user: dict =
         for key, value in values.items():
             if value is not None:
                 setattr(p, key, value.strip() if key in ("brand", "flavor") else value)
+        if "stock_qty" in values and values["stock_qty"] is not None:
+            p.in_stock = values["stock_qty"] > 0
+        elif values.get("in_stock") is True and int(p.stock_qty or 0) <= 0:
+            p.stock_qty = 1
+        elif values.get("in_stock") is False:
+            p.stock_qty = 0
         await session.commit()
         return {"ok": True}
 
@@ -637,6 +647,7 @@ async def admin_product_delete(product_id: int, user: dict = Depends(admin_user)
         used = (await session.execute(select(OrderItem.id).where(OrderItem.product_id == product_id).limit(1))).first()
         if used:
             p.in_stock = False
+            p.stock_qty = 0
             await session.commit()
             return {"ok": True, "archived": True}
         await session.execute(delete(CartItem).where(CartItem.product_id == product_id))
