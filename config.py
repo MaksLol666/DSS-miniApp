@@ -13,7 +13,8 @@ def _int_env(name: str, default: int) -> int:
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_ID = _int_env("ADMIN_ID", 0)
-MINIAPP_URL = os.getenv("MINIAPP_URL", "https://dss-shop.bothost.ru").strip()
+# The default must match the currently working Bothost domain.
+MINIAPP_URL = os.getenv("MINIAPP_URL", "https://dss-mm-shop.bothost.tech/").strip().rstrip("/")
 # Keep the same relative database path as the original project to preserve data.
 DB_URL = os.getenv("DB_URL", "sqlite+aiosqlite:///data/shop.db").strip()
 CATEGORIES = ["Жижа", "Устройства", "Одноразки", "Снюс", "Пластинки", "Расходники", "Наборы"]
