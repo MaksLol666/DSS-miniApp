@@ -195,6 +195,11 @@ def _register_handlers(dp: Dispatcher) -> None:
             await send_message_safe(referrer_id, "🔔 По вашей ссылке пришёл новый пользователь. Бонус появится после его первой подтверждённой покупки.")
         await message.answer("💨 DEAD SMOKE STORE\n\nКаталог, корзина, промокоды и заказы — в магазине ниже.", reply_markup=_shop_keyboard())
 
+    @dp.message(Command("myid"))
+    async def myid(message: Message):
+        if message.from_user:
+            await message.answer(f"Твой Telegram ID: `{message.from_user.id}`", parse_mode="Markdown")
+
     @dp.message(Command("admin"))
     async def admin(message: Message):
         if not _is_admin(message):
