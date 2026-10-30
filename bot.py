@@ -377,6 +377,7 @@ def _register_handlers(dp: Dispatcher) -> None:
                         p.stock_qty = 0
                         p.in_stock = False
                     else:
+                        await session.execute(delete(CartItem).where(CartItem.product_id == pid))
                         await session.delete(p)
                     await session.commit()
             await callback.message.answer(f"🗑 Товар #{pid} удалён или скрыт из каталога.")
