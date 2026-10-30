@@ -77,9 +77,8 @@ function showCaptcha() {
     document.getElementById('captcha-retry').onclick = function () {
       const sdk = getCaptchaSdk();
       try {
-        if (sdk && typeof sdk.api.reset === 'function' && captchaWidget !== null) {
-          const widgetId = captchaWidget && typeof captchaWidget === 'object' && 'id' in captchaWidget ? captchaWidget.id : captchaWidget;
-          sdk.api.reset(widgetId);
+        if (sdk && typeof sdk.reset === 'function' && captchaWidget !== null) {
+          sdk.reset(captchaWidget);
         } else {
           mountCaptcha();
         }
