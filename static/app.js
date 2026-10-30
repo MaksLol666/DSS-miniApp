@@ -170,7 +170,7 @@ function renderNav() {
   let html = '<div class="nav-inner">';
   for (const tab of tabs) {
     html += '<button class="nav-button ' + (state.page === tab[0] ? 'active' : '') + '" data-action="go" data-page="' + tab[0] + '"><span class="nav-icon">' + tab[1] + '</span><span>' + tab[2] + '</span>' +
-      (tab[0] === 'cart' && state.cart.items && state.cart.items.length ? '<span class="nav-badge">' + state.cart.items.length + '</span>' : '') + '</button>';
+      (tab[0] === 'cart' && state.cart.items && state.cart.items.length ? '<span class="nav-badge">' + state.cart.items.reduce((sum, item) => sum + Number(item.quantity || 1), 0) + '</span>' : '') + '</button>';
   }
   return html + '</div>';
 }
@@ -215,7 +215,7 @@ function renderProductGrid() {
     return '<article class="product-card"><div class="product-art"><span class="product-no">№ ' + esc(p.number) + '</span><span class="stock-dot"></span><span class="product-symbol">' + productSymbol(p) + '</span></div>' +
       '<div class="product-body"><div class="product-brand">' + esc(p.brand) + '</div><div class="product-flavor">' + esc(p.flavor) + '</div><div class="item-sub" style="margin-top:6px">В наличии: ' + Number(p.stock_qty || 0) + ' шт.</div><div class="product-foot"><div class="price">' + money(p.price) + '</div>' +
       (inCart ? '<span class="muted">В корзине: ' + Number(inCart.quantity || 1) + '</span>' : '') +
-      '<button class="add-button" data-action="add-cart" data-id="' + p.id + '" aria-label="Добавить в корзину">+</button></div></div></article>';
+      '<button class="add-button" data-action="add-cart" data-id="' + p.id + '" aria-label="Добавить в корзину" ' + (inCart && Number(inCart.quantity || 1) >= Number(p.stock_qty || 0) ? 'disabled' : '') + '>+</button></div></div></article>';
   }).join('');
 }
 function renderCatalog() {
