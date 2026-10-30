@@ -146,6 +146,10 @@ class ProductId(BaseModel):
     product_id: int = Field(gt=0)
 
 
+class CartQuantityInput(ProductId):
+    quantity: int = Field(ge=1, le=1000000)
+
+
 class PromoInput(BaseModel):
     code: str | None = Field(default=None, max_length=16)
     kind: str
@@ -317,7 +321,7 @@ async def _promo_codes(session, uid: int) -> list[str]:
 
 
 def _totals(items: list[dict], promos: list[Promocode]) -> dict:
-    subtotal = round(sum(float(i["price"]) for i in items), 2)
+    subtotal = round(sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items), 2)
     percent = min(100.0, sum(float(p.amount) for p in promos if p.kind == "percent"))
     fixed = sum(float(p.amount) for p in promos if p.kind == "fixed")
     return {"subtotal": subtotal, "percent_discount": round(percent, 2), "fixed_discount": round(fixed, 2), "total": round(max(subtotal * (1 - percent / 100) - fixed, 0), 2)}
@@ -326,7 +330,7 @@ def _totals(items: list[dict], promos: list[Promocode]) -> dict:
 async def _cart(uid: int) -> dict:
     async with SessionLocal() as session:
         rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == uid).order_by(CartItem.id))).all()
-        items = [{"product_id": p.id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price)} for _, p in rows]
+        items = [{"product_id": p.id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0)} for item, p in rows]
         codes = await _promo_codes(session, uid)
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
         return {"items": items, **_totals(items, promos), "promos": [{"code": p.code, "kind": p.kind, "amount": float(p.amount)} for p in promos]}
@@ -360,10 +364,28 @@ async def cart_add(data: ProductId, user: dict = Depends(current_user)):
         p = await session.get(Product, data.product_id)
         if not p or not p.in_stock or int(p.stock_qty or 0) <= 0:
             raise HTTPException(409, "Товар больше недоступен.")
-        existing = (await session.execute(select(CartItem.id).where(CartItem.user_id == user["id"], CartItem.product_id == p.id))).first()
-        if not existing:
-            session.add(CartItem(user_id=user["id"], product_id=p.id, reserved=False))
-            await session.commit()
+        existing = (await session.execute(select(CartItem).where(CartItem.user_id == user["id"], CartItem.product_id == p.id))).scalar_one_or_none()
+        if existing:
+            if int(existing.quantity or 1) >= int(p.stock_qty or 0):
+                raise HTTPException(409, f"Максимум в наличии: {p.stock_qty} шт.")
+            existing.quantity = int(existing.quantity or 1) + 1
+        else:
+            session.add(CartItem(user_id=user["id"], product_id=p.id, reserved=False, quantity=1))
+        await session.commit()
+    return await _cart(user["id"])
+
+
+@app.post("/api/cart/quantity")
+async def cart_set_quantity(data: CartQuantityInput, user: dict = Depends(current_user)):
+    async with SessionLocal() as session:
+        item = (await session.execute(select(CartItem).where(CartItem.user_id == user["id"], CartItem.product_id == data.product_id))).scalar_one_or_none()
+        if not item:
+            raise HTTPException(404, "Товар не найден в корзине.")
+        product = await session.get(Product, data.product_id)
+        if not product or not product.in_stock or data.quantity > int(product.stock_qty or 0):
+            raise HTTPException(409, f"Доступно не больше {int(product.stock_qty or 0) if product else 0} шт.")
+        item.quantity = data.quantity
+        await session.commit()
     return await _cart(user["id"])
 
 
@@ -425,10 +447,11 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == user["id"]).order_by(CartItem.id))).all()
         if not rows:
             raise HTTPException(400, "Корзина пуста.")
-        for _, p in rows:
-            if not p.in_stock or int(p.stock_qty or 0) <= 0:
-                raise HTTPException(409, f"Товар {p.brand} — {p.flavor} закончился.")
-        items = [{"product_id": p.id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price)} for _, p in rows]
+        for cart_item, p in rows:
+            requested = int(cart_item.quantity or 1)
+            if not p.in_stock or int(p.stock_qty or 0) < requested:
+                raise HTTPException(409, f"Для товара {p.brand} — {p.flavor} доступно {int(p.stock_qty or 0)} шт., в корзине {requested}.")
+        items = [{"product_id": p.id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "quantity": int(cart_item.quantity or 1)} for cart_item, p in rows]
         codes = await _promo_codes(session, user["id"])
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
         if len(codes) != len(promos) or any(p.used or p.used_count >= p.max_uses for p in promos):
@@ -442,9 +465,10 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
             delivery_address=data.delivery_address.strip() if data.delivery_address else None)
         session.add(order)
         await session.flush()
-        for _, p in rows:
-            session.add(OrderItem(order_id=order.id, product_id=p.id, price=float(p.price)))
-            p.stock_qty = max(0, int(p.stock_qty or 0) - 1)
+        for cart_item, p in rows:
+            quantity = int(cart_item.quantity or 1)
+            session.add(OrderItem(order_id=order.id, product_id=p.id, price=float(p.price), quantity=quantity))
+            p.stock_qty = max(0, int(p.stock_qty or 0) - quantity)
             p.in_stock = p.stock_qty > 0
         await session.execute(delete(CartItem).where(CartItem.user_id == user["id"]))
         await session.execute(delete(CartPromo).where(CartPromo.user_id == user["id"]))
@@ -452,7 +476,7 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         await session.refresh(order)
         record = await session.get(User, user["id"])
         username = record.username if record else user.get("username")
-    item_text = "\n".join(f"• {item['brand']} — {item['flavor']} — {int(item['price'])} ₽" for item in items)
+    item_text = "\n".join(f"• {item['brand']} — {item['flavor']} × {item['quantity']} — {int(item['price'])} ₽/шт." for item in items)
     receive = "Самовывоз" if data.delivery_type == "pickup" else f"СДЭК: {data.delivery_name}, {data.delivery_phone}, {data.delivery_address} (+{DELIVERY_PRICE} ₽)"
     notice = f"🆕 Новый заказ №{order.id}\nПользователь: {username or user['id']} (ID {user['id']})\n\n{item_text}\n\nСумма товаров: {int(totals['subtotal'])} ₽\nСкидка: {totals['percent_discount']}% и {int(totals['fixed_discount'])} ₽\nПолучение: {receive}\nПромокоды: {', '.join(codes) if codes else 'нет'}\nК оплате: {int(final)} ₽\n\nОткрой /admin в боте, чтобы обработать заказ."
     await bot.notify_admin(notice, order.id)
@@ -463,7 +487,7 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
 
 async def _order_items(session, order_id: int) -> list[dict]:
     rows = (await session.execute(select(OrderItem, Product).join(Product, OrderItem.product_id == Product.id).where(OrderItem.order_id == order_id).order_by(OrderItem.id))).all()
-    return [{"product_id": p.id, "brand": p.brand, "flavor": p.flavor, "price": float(item.price)} for item, p in rows]
+    return [{"product_id": p.id, "brand": p.brand, "flavor": p.flavor, "price": float(item.price), "quantity": int(item.quantity or 1)} for item, p in rows]
 
 
 @app.get("/api/orders")
@@ -584,8 +608,8 @@ async def _process_order(order_id: int, approve: bool) -> dict:
                 notifications.append((buyer.id, f"✅ Заказ №{order_id} подтверждён! Спасибо за покупку."))
         else:
             order.status = "rejected"
-            for _, product in items:
-                product.stock_qty = int(product.stock_qty or 0) + 1
+            for order_item, product in items:
+                product.stock_qty = int(product.stock_qty or 0) + int(order_item.quantity or 1)
                 product.in_stock = product.stock_qty > 0
             if buyer:
                 notifications.append((buyer.id, f"❌ Заказ №{order_id} отклонён администратором."))
