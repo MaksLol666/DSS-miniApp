@@ -210,8 +210,13 @@ function renderProductGrid() {
     grid.innerHTML = '<div class="empty" style="grid-column:1/-1"><div class="empty-emoji">⌕</div>По этому запросу товаров нет.</div>';
     return;
   }
-  grid.innerHTML = products.map(p => '<article class="product-card"><div class="product-art"><span class="product-no">№ ' + esc(p.number) + '</span><span class="stock-dot"></span><span class="product-symbol">' + productSymbol(p) + '</span></div>' +
-    '<div class="product-body"><div class="product-brand">' + esc(p.brand) + '</div><div class="product-flavor">' + esc(p.flavor) + '</div><div class="product-foot"><div class="price">' + money(p.price) + '</div><button class="add-button" data-action="add-cart" data-id="' + p.id + '" aria-label="Добавить в корзину">+</button></div></div></article>').join('');
+  grid.innerHTML = products.map(p => {
+    const inCart = (state.cart.items || []).find(i => i.product_id === p.id);
+    return '<article class="product-card"><div class="product-art"><span class="product-no">№ ' + esc(p.number) + '</span><span class="stock-dot"></span><span class="product-symbol">' + productSymbol(p) + '</span></div>' +
+      '<div class="product-body"><div class="product-brand">' + esc(p.brand) + '</div><div class="product-flavor">' + esc(p.flavor) + '</div><div class="item-sub" style="margin-top:6px">В наличии: ' + Number(p.stock_qty || 0) + ' шт.</div><div class="product-foot"><div class="price">' + money(p.price) + '</div>' +
+      (inCart ? '<span class="muted">В корзине: ' + Number(inCart.quantity || 1) + '</span>' : '') +
+      '<button class="add-button" data-action="add-cart" data-id="' + p.id + '" aria-label="Добавить в корзину">+</button></div></div></article>';
+  }).join('');
 }
 function renderCatalog() {
   let chips = '<button class="chip ' + (!state.category ? 'active' : '') + '" data-action="category" data-id="0">Все товары</button>';
@@ -224,9 +229,9 @@ function renderCatalog() {
 function renderCart() {
   const cart = state.cart || { items: [], promos: [] };
   if (!cart.items || !cart.items.length) return '<div class="section-head"><div><h1 class="section-title">Корзина</h1><div class="section-sub">Тут появятся выбранные товары</div></div></div><div class="empty"><div class="empty-emoji">▣</div><b>Пока пусто</b><p>Добавь товар из каталога.</p><button class="primary" data-action="go" data-page="catalog" style="margin-top:10px">Перейти в каталог</button></div>';
-  const items = cart.items.map(i => '<div class="item-row"><div class="item-thumb">◈</div><div class="item-info"><div class="item-title">' + esc(i.brand) + '</div><div class="item-sub">' + esc(i.flavor) + '</div></div><div style="text-align:right"><b>' + money(i.price) + '</b><br><button class="mini-link" data-action="remove-cart" data-id="' + i.product_id + '">Убрать</button></div></div>').join('');
+  const items = cart.items.map(i => '<div class="item-row"><div class="item-thumb">◈</div><div class="item-info"><div class="item-title">' + esc(i.brand) + '</div><div class="item-sub">' + esc(i.flavor) + '</div><div class="item-sub">В наличии: ' + Number(i.stock_qty || 0) + ' шт.</div></div><div style="text-align:right"><b>' + money(i.price * Number(i.quantity || 1)) + '</b><div class="row" style="justify-content:flex-end;gap:7px;margin-top:6px"><button class="small-button" data-action="decrease-cart" data-id="' + i.product_id + '" ' + (Number(i.quantity || 1) <= 1 ? 'disabled' : '') + '>−</button><b>' + Number(i.quantity || 1) + ' шт.</b><button class="small-button" data-action="increase-cart" data-id="' + i.product_id + '" ' + (Number(i.quantity || 1) >= Number(i.stock_qty || 0) ? 'disabled' : '') + '>+</button></div><button class="mini-link" data-action="remove-cart" data-id="' + i.product_id + '">Убрать</button></div></div>').join('');
   const promos = (cart.promos || []).map(p => '<div class="summary-line"><span class="discount">🎟 ' + esc(p.code) + ' · ' + (p.kind === 'percent' ? esc(p.amount) + '%' : '−' + money(p.amount)) + '</span><span class="muted">' + (p.kind === 'percent' ? 'процентная' : 'фиксированная') + '</span></div>').join('');
-  return '<div class="section-head"><div><h1 class="section-title">Корзина</h1><div class="section-sub">' + cart.items.length + ' товар(а)</div></div><button class="mini-link" data-action="clear-cart">Очистить</button></div>' +
+  return '<div class="section-head"><div><h1 class="section-title">Корзина</h1><div class="section-sub">' + cart.items.reduce((sum, i) => sum + Number(i.quantity || 1), 0) + ' шт. товаров</div></div><button class="mini-link" data-action="clear-cart">Очистить</button></div>' +
     '<div class="card">' + items + '</div><div class="card"><div class="row"><b>Промокод</b><span class="muted">до 2 на заказ</span></div><form id="promo-form"><label class="field-label">Код скидки</label><div class="row"><input class="field" name="code" maxlength="16" required placeholder="Например, DSS2026"><button class="secondary" type="submit">Применить</button></div></form>' +
     promos + '<div class="summary-line"><span>Сумма товаров</span><b>' + money(cart.subtotal) + '</b></div><div class="summary-line"><span>Процентная скидка</span><span class="discount">−' + money((cart.subtotal || 0) * (cart.percent_discount || 0) / 100) + '</span></div><div class="summary-line"><span>Скидка фиксированная</span><span class="discount">−' + money(cart.fixed_discount) + '</span></div><div class="summary-line total"><span>Итого без доставки</span><span>' + money(cart.total) + '</span></div><button class="primary" data-action="go" data-page="checkout" style="margin-top:10px">Оформить заказ →</button></div>';
 }
@@ -250,7 +255,7 @@ function renderOrders() {
   return '<div class="section-head"><div><h1 class="section-title">Мои заказы</h1><div class="section-sub">Последние оформленные заказы</div></div><button class="mini-link" data-action="reload-orders">Обновить</button></div>' +
     state.orders.map(o => {
       const st = statusInfo(o.status);
-      const items = (o.items || []).map(i => '<div class="summary-line"><span>' + esc(i.brand) + ' — ' + esc(i.flavor) + '</span><span>' + money(i.price) + '</span></div>').join('');
+      const items = (o.items || []).map(i => '<div class="summary-line"><span>' + esc(i.brand) + ' — ' + esc(i.flavor) + ' × ' + Number(i.quantity || 1) + '</span><span>' + money(i.price * Number(i.quantity || 1)) + '</span></div>').join('');
       let review = '';
       if (o.status === 'approved' && !o.has_review) {
         if (state.reviewOrder === o.id) review = '<form id="review-form" data-order-id="' + o.id + '"><label class="field-label">Оценка</label><select class="field" name="rating"><option value="5">5 — Отлично</option><option value="4">4 — Хорошо</option><option value="3">3 — Нормально</option><option value="2">2 — Плохо</option><option value="1">1 — Очень плохо</option></select><label class="field-label">Отзыв</label><textarea class="field" name="text" required minlength="3" maxlength="2048" placeholder="Расскажи о покупке"></textarea><button class="primary" type="submit" style="margin-top:10px">Отправить отзыв</button></form>';
@@ -292,7 +297,7 @@ function renderAdmin() {
     body = '<div class="row" style="margin:12px 0"><b>Последние заказы</b><button class="mini-link" data-action="reload-admin">Обновить</button></div>' + (list.length ? list.map(o => {
       const st = statusInfo(o.status);
       return '<article class="list-card"><div class="row"><b>Заказ №' + o.id + '</b><span class="status ' + st[0] + '">' + st[1] + '</span></div><div class="item-sub" style="margin:6px 0">ID ' + o.user_id + ' · ' + esc(o.username || 'без username') + ' · ' + dateText(o.created_at) + '</div>' +
-        (o.items || []).map(i => '<div class="summary-line"><span>' + esc(i.brand) + ' — ' + esc(i.flavor) + '</span><span>' + money(i.price) + '</span></div>').join('') +
+        (o.items || []).map(i => '<div class="summary-line"><span>' + esc(i.brand) + ' — ' + esc(i.flavor) + ' × ' + Number(i.quantity || 1) + '</span><span>' + money(i.price * Number(i.quantity || 1)) + '</span></div>').join('') +
         '<div class="summary-line"><span>' + (o.delivery_type === 'cdek' ? 'СДЭК · ' + esc(o.delivery_name || '') + ' · ' + esc(o.delivery_phone || '') + ' · ' + esc(o.delivery_address || '') : 'Самовывоз') + '</span><b>' + money(o.total) + '</b></div>' +
         (o.promo_codes ? '<div class="item-sub">Промокоды: ' + esc(o.promo_codes) + '</div>' : '') +
         (o.status === 'pending' ? '<div class="row" style="margin-top:12px"><button class="primary" data-action="approve-order" data-id="' + o.id + '">Принять</button><button class="danger" data-action="reject-order" data-id="' + o.id + '">Отклонить</button></div>' : '') + '</article>';
@@ -357,8 +362,19 @@ async function action(button) {
   if (name === 'go') { await go(button.dataset.page); return; }
   if (name === 'category') { state.category = id; render(); return; }
   if (name === 'add-cart') {
-    try { state.cart = await api('/api/cart/add', { method: 'POST', body: JSON.stringify({ product_id: id }) }); haptic('light'); render(); toast('Добавлено в корзину'); }
+    try { state.cart = await api('/api/cart/add', { method: 'POST', body: JSON.stringify({ product_id: id }) }); state.products = await api('/api/products'); haptic('light'); render(); toast('Добавлено в корзину'); }
     catch (error) { toast(error.message); } return;
+  }
+  if (name === 'increase-cart' || name === 'decrease-cart') {
+    const item = (state.cart.items || []).find(i => i.product_id === id);
+    if (!item) return;
+    const quantity = Number(item.quantity || 1) + (name === 'increase-cart' ? 1 : -1);
+    try {
+      state.cart = await api('/api/cart/quantity', { method: 'POST', body: JSON.stringify({ product_id: id, quantity }) });
+      state.products = await api('/api/products');
+      render();
+    } catch (error) { toast(error.message); }
+    return;
   }
   if (name === 'remove-cart') {
     try { await api('/api/cart/remove', { method: 'POST', body: JSON.stringify({ product_id: id }) }); await refreshCart(); render(); toast('Товар убран'); }
