@@ -822,7 +822,7 @@ async def admin_stats(user: dict = Depends(admin_user)):
         revenue = (await session.execute(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == "approved"))).scalar() or 0
         day = (await session.execute(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == "approved", Order.created_at >= now - timedelta(days=1)))).scalar() or 0
         week = (await session.execute(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == "approved", Order.created_at >= now - timedelta(days=7)))).scalar() or 0
-        counts = (await session.execute(select(OrderItem.product_id, func.count(OrderItem.id).label("n")).group_by(OrderItem.product_id).order_by(func.count(OrderItem.id).desc()).limit(5))).all()
+        counts = (await session.execute(select(OrderItem.product_id, func.sum(OrderItem.quantity).label("n")).group_by(OrderItem.product_id).order_by(func.sum(OrderItem.quantity).desc()).limit(5))).all()
         top = []
         for product_id, count in counts:
             p = await session.get(Product, product_id)
