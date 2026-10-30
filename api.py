@@ -455,7 +455,7 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
     item_text = "\n".join(f"• {item['brand']} — {item['flavor']} — {int(item['price'])} ₽" for item in items)
     receive = "Самовывоз" if data.delivery_type == "pickup" else f"СДЭК: {data.delivery_name}, {data.delivery_phone}, {data.delivery_address} (+{DELIVERY_PRICE} ₽)"
     notice = f"🆕 Новый заказ №{order.id}\nПользователь: {username or user['id']} (ID {user['id']})\n\n{item_text}\n\nСумма товаров: {int(totals['subtotal'])} ₽\nСкидка: {totals['percent_discount']}% и {int(totals['fixed_discount'])} ₽\nПолучение: {receive}\nПромокоды: {', '.join(codes) if codes else 'нет'}\nК оплате: {int(final)} ₽\n\nОткрой /admin в боте, чтобы обработать заказ."
-    await bot.notify_admin(notice)
+    await bot.notify_admin(notice, order.id)
     return {"id": order.id, "total": float(order.total), "status": order.status, "delivery_type": order.delivery_type,
         "delivery_name": order.delivery_name, "delivery_phone": order.delivery_phone, "delivery_address": order.delivery_address,
         "created_at": order.created_at.isoformat() if order.created_at else "", "items": items, "delivery_price": delivery_price}
