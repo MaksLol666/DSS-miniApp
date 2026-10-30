@@ -17,15 +17,15 @@
 
 ## Запуск на Bothost
 
-- Команда запуска: python api.py (или uvicorn api:app --host 0.0.0.0 --port $PORT).
-- Если Bothost ожидает внутренний порт 3000, приложение его использует по умолчанию; при наличии переменной PORT она имеет приоритет.
-- Публичный URL Mini App: https://dss-shop.bothost.ru, если домен по-прежнему назначен этому контейнеру. Такое же значение укажи в MINIAPP_URL.
-- Эндпоинт /api/health должен возвращать JSON {"ok":true,"app":"dss-miniapp"}. Корень / отдаёт static/index.html.
-- После коммита в ветку main обнови контейнер в Bothost.
+- Точка запуска контейнера: `python main.py`; приложение слушает порт `3000` (или значение переменной окружения `PORT`).
+- Рабочий публичный URL Mini App: https://dss-mm-shop.bothost.tech/
+- Значение `MINIAPP_URL` в настройках окружения Bothost тоже должно быть `https://dss-mm-shop.bothost.tech/`, чтобы кнопка запуска Mini App и ссылки в боте вели на новый домен.
+- Проверка API: `/health` или `/api/health` должна возвращать JSON `{"ok":true,"app":"dss-miniapp"}`. Корень `/` отдаёт `static/index.html`.
+- После коммита в ветку `main` обнови контейнер в Bothost.
 
 ## Environment
 
-Настрой в Bothost BOT_TOKEN, ADMIN_ID, MINIAPP_URL, DB_URL; значения для CAPTCHA — DDOS_GUARD_SITE_KEY, DDOS_GUARD_SECRET_KEY, DDOS_GUARD_SESSION_SECRET. Секретный ключ CAPTCHA и токен Telegram не отправляй в чат и не коммить в GitHub.
+Настрой в Bothost `BOT_TOKEN`, `ADMIN_ID`, `MINIAPP_URL`, `DB_URL`; значения для CAPTCHA — `DDOS_GUARD_SITE_KEY`, `DDOS_GUARD_SECRET_KEY`, `DDOS_GUARD_SESSION_SECRET`. Секретный ключ CAPTCHA и токен Telegram не отправляй в чат и не коммить в GitHub.
 
 ## Сохранность данных
 
