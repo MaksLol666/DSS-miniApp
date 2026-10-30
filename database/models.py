@@ -46,6 +46,7 @@ class CartItem(Base):
     user_id: Mapped[int] = mapped_column(BigInteger)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
     reserved: Mapped[bool] = mapped_column(Boolean, default=False)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class Order(Base):
@@ -68,6 +69,7 @@ class OrderItem(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
     price: Mapped[float] = mapped_column(Float)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class Promocode(Base):
