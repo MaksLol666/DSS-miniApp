@@ -600,7 +600,7 @@ async def _process_order(order_id: int, approve: bool) -> dict:
 async def admin_products(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(Product).order_by(Product.category_id, Product.number, Product.id))).scalars().all()
-        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock)} for p in rows]
+        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0)} for p in rows]
 
 
 @app.post("/api/admin/products")
