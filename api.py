@@ -552,10 +552,20 @@ async def add_review(data: ReviewInput, user: dict = Depends(current_user)):
             raise HTTPException(409, "Для этого заказа отзыв уже оставлен.")
         account = await session.get(User, uid)
         username = account.username if account else user.get("username")
-        session.add(Review(user_id=uid, order_id=data.order_id, rating=data.rating, text=data.text.strip(), has_photo=False))
+        review = Review(user_id=uid, order_id=data.order_id, rating=data.rating, text=data.text.strip(), has_photo=False, status="pending")
+        session.add(review)
         await session.commit()
-    published = await bot.publish_review(f"⭐ Отзыв на заказ №{data.order_id}\nПользователь: {username or uid} (ID {uid})\nОценка: {'★' * data.rating}{'☆' * (5-data.rating)}\n\n{data.text.strip()}")
-    return {"ok": True, "published": published}
+        await session.refresh(review)
+        review_id = review.id
+    notified = await bot.send_review_moderation(
+        review_id=review_id,
+        order_id=data.order_id,
+        username=username,
+        user_id=uid,
+        rating=data.rating,
+        review_text=data.text.strip(),
+    )
+    return {"ok": True, "status": "pending", "notified_admin": notified}
 
 
 async def _create_promo(session, owner_id: int, kind: str, amount: float, max_uses: int = 1, created_by: str = "ref") -> str:
@@ -858,7 +868,7 @@ async def admin_broadcast(data: BroadcastInput, tasks: BackgroundTasks, user: di
 async def admin_reviews(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(Review).order_by(Review.published_at.desc()).limit(100))).scalars().all()
-        return [{"id": r.id, "order_id": r.order_id, "user_id": r.user_id, "rating": r.rating, "text": r.text or "", "published_at": r.published_at.isoformat() if r.published_at else ""} for r in rows]
+        return [{"id": r.id, "order_id": r.order_id, "user_id": r.user_id, "rating": r.rating, "text": r.text or "", "status": r.status or "pending", "published_at": r.published_at.isoformat() if r.published_at else ""} for r in rows]
 
 
 @app.get("/")
