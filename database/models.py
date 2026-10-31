@@ -102,4 +102,5 @@ class Review(Base):
     text: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     photo_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     has_photo: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
     published_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
