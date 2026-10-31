@@ -94,9 +94,9 @@ async def send_review_moderation(review_id: int, order_id: int, username: str | 
         return False
     buyer = f"@{username}" if username and not username.isdigit() else f"ID {user_id}"
     text = (
-        f"📝 НОВЫЙ ОТЗЫВ — ОЖИДАЕТ МОДЕРАЦИИ\\n\\n"
-        f"Заказ: №{order_id}\\nПокупатель: {buyer}\\n"
-        f"Оценка: {'★' * rating}{'☆' * (5-rating)}\\n\\n"
+        f"📝 НОВЫЙ ОТЗЫВ — ОЖИДАЕТ МОДЕРАЦИИ\n\n"
+        f"Заказ: №{order_id}\nПокупатель: {buyer}\n"
+        f"Оценка: {'★' * rating}{'☆' * (5-rating)}\n\n"
         f"{review_text}"
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
@@ -446,11 +446,11 @@ def _register_handlers(dp: Dispatcher) -> None:
                 username = buyer.username if buyer else None
                 order_id, rating, review_text = review.order_id, review.rating, review.text or ""
             published = await publish_review(
-                f"💨 DEAD SMOKE STORE | ОТЗЫВЫ ПОКУПАТЕЛЕЙ\\n\\n"
-                f"⭐ Оценка: {'★' * rating}{'☆' * (5-rating)}\\n"
-                f"🛍 Покупка подтверждена · заказ №{order_id}\\n"
-                f"👤 Покупатель: {('@' + username) if username and not username.isdigit() else 'Покупатель DSS'}\\n\\n"
-                f"«{review_text}»\\n\\n"
+                f"💨 DEAD SMOKE STORE | ОТЗЫВЫ ПОКУПАТЕЛЕЙ\n\n"
+                f"⭐ Оценка: {'★' * rating}{'☆' * (5-rating)}\n"
+                f"🛍 Покупка подтверждена · заказ №{order_id}\n"
+                f"👤 Покупатель: {('@' + username) if username and not username.isdigit() else 'Покупатель DSS'}\n\n"
+                f"«{review_text}»\n\n"
                 f"DEAD SMOKE STORE"
             )
             if not published:
