@@ -11,7 +11,7 @@ from sqlalchemy import delete, func, select
 
 from config import ADMIN_ID, BOT_TOKEN, MINIAPP_URL, REVIEWS_CHANNEL_ID
 from database.db import SessionLocal
-from database.models import User, Product, Category, Order, OrderItem, Promocode, CartPromo
+from database.models import User, Product, Category, Order, OrderItem, Promocode, CartPromo, Review
 
 log = logging.getLogger("dss.bot")
 BOT_USERNAME: str | None = None
@@ -86,6 +86,28 @@ async def publish_review(text: str) -> bool:
         return True
     except Exception:
         log.exception("Не удалось опубликовать отзыв в канал")
+        return False
+
+
+async def send_review_moderation(review_id: int, order_id: int, username: str | None, user_id: int, rating: int, review_text: str) -> bool:
+    if _bot is None or not ADMIN_ID:
+        return False
+    buyer = f"@{username}" if username and not username.isdigit() else f"ID {user_id}"
+    text = (
+        f"📝 НОВЫЙ ОТЗЫВ — ОЖИДАЕТ МОДЕРАЦИИ\\n\\n"
+        f"Заказ: №{order_id}\\nПокупатель: {buyer}\\n"
+        f"Оценка: {'★' * rating}{'☆' * (5-rating)}\\n\\n"
+        f"{review_text}"
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"review:approve:{review_id}"),
+        InlineKeyboardButton(text="❌ Отклонить", callback_data=f"review:reject:{review_id}"),
+    ]])
+    try:
+        await _bot.send_message(ADMIN_ID, text, reply_markup=keyboard, disable_web_page_preview=True)
+        return True
+    except Exception:
+        log.exception("Не удалось отправить отзыв администратору на модерацию")
         return False
 
 
@@ -394,6 +416,57 @@ def _register_handlers(dp: Dispatcher) -> None:
                 await session.commit()
             await callback.message.answer("♻️ Статистика всех пользователей сброшена. Аккаунты и история заказов сохранены.")
         await callback.answer()
+
+    @dp.callback_query(F.data.startswith("review:"))
+    async def review_callbacks(callback: CallbackQuery):
+        if not _is_admin(callback):
+            await callback.answer("Нет доступа", show_alert=True)
+            return
+        try:
+            _, decision, review_id_s = callback.data.split(":")
+            review_id = int(review_id_s)
+            if decision not in ("approve", "reject"):
+                raise ValueError("Неизвестное действие.")
+            async with SessionLocal() as session:
+                review = await session.get(Review, review_id)
+                if not review:
+                    await callback.answer("Отзыв не найден.", show_alert=True)
+                    return
+                if review.status != "pending":
+                    await callback.answer("Этот отзыв уже обработан.", show_alert=True)
+                    return
+                if decision == "reject":
+                    review.status = "rejected"
+                    await session.commit()
+                    await callback.message.edit_reply_markup(reply_markup=None)
+                    await callback.message.answer(f"❌ Отзыв №{review_id} отклонён.")
+                    await callback.answer("Отзыв отклонён")
+                    return
+                buyer = await session.get(User, review.user_id)
+                username = buyer.username if buyer else None
+                order_id, rating, review_text = review.order_id, review.rating, review.text or ""
+            published = await publish_review(
+                f"💨 DEAD SMOKE STORE | ОТЗЫВЫ ПОКУПАТЕЛЕЙ\\n\\n"
+                f"⭐ Оценка: {'★' * rating}{'☆' * (5-rating)}\\n"
+                f"🛍 Покупка подтверждена · заказ №{order_id}\\n"
+                f"👤 Покупатель: {('@' + username) if username and not username.isdigit() else 'Покупатель DSS'}\\n\\n"
+                f"«{review_text}»\\n\\n"
+                f"DEAD SMOKE STORE"
+            )
+            if not published:
+                await callback.answer("Не удалось опубликовать. Проверь права бота и ID канала.", show_alert=True)
+                return
+            async with SessionLocal() as session:
+                review = await session.get(Review, review_id)
+                if review and review.status == "pending":
+                    review.status = "published"
+                    await session.commit()
+            await callback.message.edit_reply_markup(reply_markup=None)
+            await callback.message.answer(f"✅ Отзыв №{review_id} опубликован в @OTZOV_DSS.")
+            await callback.answer("Опубликовано")
+        except Exception:
+            log.exception("Review moderation callback failed")
+            await callback.answer("Не удалось обработать отзыв.", show_alert=True)
 
     @dp.callback_query(F.data.startswith("order:"))
     async def order_callbacks(callback: CallbackQuery):
