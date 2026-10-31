@@ -32,3 +32,7 @@ async def init_db() -> None:
                 if "quantity" not in columns:
                     await connection.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1")
                 await connection.exec_driver_sql(f"UPDATE {table} SET quantity = 1 WHERE quantity IS NULL OR quantity < 1")
+            result = await connection.exec_driver_sql("PRAGMA table_info(reviews)")
+            review_columns = {row[1] for row in result.fetchall()}
+            if "status" not in review_columns:
+                await connection.exec_driver_sql("ALTER TABLE reviews ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'pending'")
