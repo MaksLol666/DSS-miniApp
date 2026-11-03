@@ -25,6 +25,8 @@ async def init_db() -> None:
             columns = {row[1] for row in result.fetchall()}
             if "stock_qty" not in columns:
                 await connection.exec_driver_sql("ALTER TABLE products ADD COLUMN stock_qty INTEGER NOT NULL DEFAULT 1")
+            if "image_urls" not in columns:
+                await connection.exec_driver_sql("ALTER TABLE products ADD COLUMN image_urls VARCHAR(4096) NOT NULL DEFAULT '[]'")
             await connection.exec_driver_sql("UPDATE products SET stock_qty = CASE WHEN in_stock = 1 THEN 1 ELSE 0 END WHERE stock_qty IS NULL OR stock_qty < 0")
             for table in ("cart_items", "order_items"):
                 result = await connection.exec_driver_sql(f"PRAGMA table_info({table})")
