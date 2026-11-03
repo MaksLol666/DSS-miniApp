@@ -708,7 +708,7 @@ async def admin_product_delete_image(product_id: int, image_index: int, user: di
 @app.get("/uploads/products/{filename}")
 async def product_image(filename: str):
     safe_name = Path(filename).name
-    if safe_name != filename or not re.fullmatch(r"[0-9]+_[a-f0-9]{24}\\.(jpg|png|webp)", safe_name):
+    if safe_name != filename or not re.fullmatch(r"[0-9]+_[a-f0-9]{24}\.(jpg|png|webp)", safe_name):
         raise HTTPException(404, "Фотография не найдена.")
     target = PRODUCT_UPLOAD_DIR / safe_name
     if not target.is_file():
