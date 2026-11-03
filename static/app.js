@@ -7,7 +7,7 @@ const state = {
   user: null, page: 'catalog', categories: [], products: [], cart: {items: [], promos: []},
   profile: null, orders: [], promos: [], top: [], topref: [], search: '', category: 0,
   delivery: 'pickup', reviewOrder: 0, leaderKind: 'buyers', adminTab: 'orders',
-  adminProducts: [], adminOrders: [], adminUsers: [], adminPromos: [], adminReviews: [], adminStats: null, adminQuery: ''
+  adminProducts: [], adminOrders: [], adminUsers: [], adminPromos: [], adminReviews: [], adminStats: null, adminQuery: '', galleryProductId: 0, galleryIndex: 0
 };
 let toastTimer = 0;
 let captchaPromise = null;
@@ -213,10 +213,19 @@ function renderProductGrid() {
   grid.innerHTML = products.map(p => {
     const inCart = (state.cart.items || []).find(i => i.product_id === p.id);
     return '<article class="product-card"><div class="product-art">' + (p.images && p.images.length ? '<img src="' + esc(p.images[0]) + '" alt="' + esc(p.brand) + '" style="width:100%;height:100%;object-fit:cover;border-radius:14px">' : '<span class="product-symbol">' + productSymbol(p) + '</span>') + '<span class="product-no">№ ' + esc(p.number) + '</span><span class="stock-dot"></span></div>' +
-      '<div class="product-body"><div class="product-brand">' + esc(p.brand) + '</div><div class="product-flavor">' + esc(p.flavor) + '</div><div class="item-sub" style="margin-top:6px">В наличии: ' + Number(p.stock_qty || 0) + ' шт.</div><div class="product-foot"><div class="price">' + money(p.price) + '</div>' +
+      '<div class="product-body"><div class="product-brand">' + esc(p.brand) + '</div><div class="product-flavor">' + esc(p.flavor) + '</div>' + (p.images && p.images.length ? '<button class="mini-link" data-action="view-product" data-id="' + p.id + '" style="margin-top:5px">Фотографии · ' + p.images.length + '</button>' : '') + '<div class="item-sub" style="margin-top:6px">В наличии: ' + Number(p.stock_qty || 0) + ' шт.</div><div class="product-foot"><div class="price">' + money(p.price) + '</div>' +
       (inCart ? '<span class="muted">В корзине: ' + Number(inCart.quantity || 1) + '</span>' : '') +
       '<button class="add-button" data-action="add-cart" data-id="' + p.id + '" aria-label="Добавить в корзину" ' + (inCart && Number(inCart.quantity || 1) >= Number(p.stock_qty || 0) ? 'disabled' : '') + '>+</button></div></div></article>';
   }).join('');
+}
+function renderProductGallery(productId) {
+  const product = state.products.find(p => p.id === Number(productId));
+  if (!product || !product.images || !product.images.length) return;
+  state.galleryProductId = product.id;
+  state.galleryIndex = Math.max(0, Math.min(state.galleryIndex, product.images.length - 1));
+  const index = state.galleryIndex;
+  const root = document.getElementById('modal-root');
+  root.innerHTML = '<div class="modal-backdrop" data-action="gallery-close"><div class="modal" role="dialog" aria-modal="true" aria-label="Фотографии товара" onclick="event.stopPropagation()"><div class="row"><b>' + esc(product.brand) + ' — ' + esc(product.flavor) + '</b><button class="mini-link" data-action="gallery-close">Закрыть ✕</button></div><div style="margin-top:12px;background:#111;border-radius:14px;overflow:hidden"><img src="' + esc(product.images[index]) + '" alt="' + esc(product.brand) + ', фото ' + (index + 1) + '" style="display:block;width:100%;max-height:62vh;object-fit:contain"></div><div class="row" style="justify-content:space-between;margin-top:10px"><button class="secondary" data-action="gallery-prev" ' + (index === 0 ? 'disabled' : '') + '>← Назад</button><span class="muted">' + (index + 1) + ' / ' + product.images.length + '</span><button class="secondary" data-action="gallery-next" ' + (index >= product.images.length - 1 ? 'disabled' : '') + '>Далее →</button></div>' + (product.images.length > 1 ? '<div class="row" style="gap:7px;overflow-x:auto;margin-top:12px">' + product.images.map((url, n) => '<button data-action="gallery-select" data-index="' + n + '" aria-label="Фото ' + (n + 1) + '" style="padding:2px;border:2px solid ' + (n === index ? '#a855f7' : 'transparent') + ';background:transparent;border-radius:9px;flex:0 0 auto"><img src="' + esc(url) + '" alt="" style="width:58px;height:58px;object-fit:cover;border-radius:7px;display:block"></button>').join('') + '</div>' : '') + '</div></div>';
 }
 function renderCatalog() {
   let chips = '<button class="chip ' + (!state.category ? 'active' : '') + '" data-action="category" data-id="0">Все товары</button>';
@@ -380,6 +389,17 @@ async function action(button) {
   const id = Number(button.dataset.id || 0);
   if (name === 'go') { await go(button.dataset.page); return; }
   if (name === 'category') { state.category = id; render(); return; }
+  if (name === 'view-product') { state.galleryIndex = 0; renderProductGallery(id); return; }
+  if (name === 'gallery-close') { document.getElementById('modal-root').innerHTML = ''; state.galleryProductId = 0; return; }
+  if (name === 'gallery-prev' || name === 'gallery-next' || name === 'gallery-select') {
+    const product = state.products.find(p => p.id === state.galleryProductId);
+    if (!product || !product.images || !product.images.length) return;
+    if (name === 'gallery-prev') state.galleryIndex = Math.max(0, state.galleryIndex - 1);
+    else if (name === 'gallery-next') state.galleryIndex = Math.min(product.images.length - 1, state.galleryIndex + 1);
+    else state.galleryIndex = Math.max(0, Math.min(product.images.length - 1, Number(button.dataset.index)));
+    renderProductGallery(product.id);
+    return;
+  }
   if (name === 'add-cart') {
     try { state.cart = await api('/api/cart/add', { method: 'POST', body: JSON.stringify({ product_id: id }) }); state.products = await api('/api/products'); haptic('light'); render(); toast('Добавлено в корзину'); }
     catch (error) { toast(error.message); } return;
