@@ -1,5 +1,8 @@
 import asyncio
 import logging
+import json
+import secrets
+from pathlib import Path
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F
@@ -150,6 +153,35 @@ async def _show_products(message: Message):
     await message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
+
+async def _attach_product_photos(product_id: int, file_ids: list[str]) -> list[str]:
+    if not _bot or not file_ids:
+        return []
+    directory = Path("data/uploads/products")
+    directory.mkdir(parents=True, exist_ok=True)
+    urls = []
+    async with SessionLocal() as session:
+        product = await session.get(Product, product_id)
+        if not product:
+            return []
+        current = product.images
+        for file_id in file_ids[:max(0, 5 - len(current))]:
+            try:
+                info = await _bot.get_file(file_id)
+                ext = Path(info.file_path or "").suffix.lower()
+                if ext not in (".jpg", ".jpeg", ".png", ".webp"):
+                    ext = ".jpg"
+                filename = f"{product_id}_{secrets.token_hex(12)}{ext}"
+                target = directory / filename
+                await _bot.download(file_id, destination=target)
+                urls.append(f"/uploads/products/{filename}")
+            except Exception:
+                log.exception("Не удалось сохранить фото товара %s", product_id)
+        product.image_urls = json.dumps(current + urls, ensure_ascii=False)
+        await session.commit()
+    return urls
+
+
 async def _create_product_from_flow(message: Message, flow: dict):
     async with SessionLocal() as session:
         category = await session.get(Category, int(flow["category_id"]))
@@ -162,7 +194,8 @@ async def _create_product_from_flow(message: Message, flow: dict):
         session.add(p)
         await session.commit()
         await session.refresh(p)
-    await message.answer(f"✅ Товар добавлен: #{p.id}\n{p.brand} — {p.flavor}\nЦена: {p.price:.0f} ₽\nОстаток: {p.stock_qty} шт.", reply_markup=_admin_menu())
+    saved = await _attach_product_photos(p.id, flow.get("photo_file_ids", []))
+    await message.answer(f"✅ Товар добавлен: #{p.id}\n{p.brand} — {p.flavor}\nЦена: {p.price:.0f} ₽\nОстаток: {p.stock_qty} шт.\nФотографий: {len(saved)}", reply_markup=_admin_menu())
 
 
 async def _broadcast(text: str):
@@ -527,8 +560,27 @@ def _register_handlers(dp: Dispatcher) -> None:
                 await message.answer("Количество должно быть целым числом от 0 до 1 000 000.")
                 return
             flow["stock_qty"] = qty
-            ADMIN_FLOW.pop(message.from_user.id, None)
-            await _create_product_from_flow(message, flow)
+            flow["step"] = "photos"
+            flow["photo_file_ids"] = []
+            await message.answer("Отправь до 5 фотографий товара (можно альбомом). Когда закончишь — напиши «Готово». Если фото не нужны, сразу напиши «Готово».")
+        elif step == "photos":
+            if message.photo:
+                if len(flow.get("photo_file_ids", [])) >= 5:
+                    await message.answer("Уже набрано 5 фотографий. Напиши «Готово».")
+                    return
+                flow.setdefault("photo_file_ids", []).append(message.photo[-1].file_id)
+                await message.answer(f"Фото принято: {len(flow['photo_file_ids'])}/5. Отправь ещё или напиши «Готово».")
+                return
+            if text.lower() in ("готово", "готов", "done", "/done"):
+                ADMIN_FLOW.pop(message.from_user.id, None)
+                if flow.get("product_id"):
+                    saved = await _attach_product_photos(flow["product_id"], flow.get("photo_file_ids", []))
+                    await message.answer(f"✅ Фотографии добавлены: {len(saved)}.", reply_markup=_admin_menu())
+                else:
+                    await _create_product_from_flow(message, flow)
+                return
+            await message.answer("Отправь фотографию или напиши «Готово».")
+            return
         elif step == "edit_product":
             parts = [x.strip() for x in text.split("|")]
             if len(parts) != 4:
@@ -548,7 +600,10 @@ def _register_handlers(dp: Dispatcher) -> None:
                     p.brand, p.flavor, p.price = parts[0], parts[1], price
                     p.stock_qty, p.in_stock = qty, qty > 0
                     await session.commit()
-                    await message.answer(f"✅ Товар #{p.id} обновлён. Остаток: {qty} шт.", reply_markup=_admin_menu())
+                    flow["step"] = "photos"
+                    flow["photo_file_ids"] = []
+                    await message.answer(f"✅ Данные товара #{p.id} обновлены. Теперь отправь дополнительные фото (до 5 всего) или напиши «Готово».")
+                    return
             ADMIN_FLOW.pop(message.from_user.id, None)
 
 
