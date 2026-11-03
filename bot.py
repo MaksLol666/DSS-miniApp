@@ -175,12 +175,18 @@ async def _attach_product_photos(product_id: int, file_ids: list[str]) -> list[s
                     ext = ".jpg"
                 filename = f"{product_id}_{secrets.token_hex(12)}{ext}"
                 target = directory / filename
-                await _bot.download(file_id, destination=target)
+                if not info.file_path:
+                    raise RuntimeError("Telegram не вернул путь к файлу фотографии")
+                await _bot.download_file(info.file_path, destination=target)
+                if not target.is_file() or target.stat().st_size == 0:
+                    raise RuntimeError("Скачанный файл фотографии пуст")
                 urls.append(f"/uploads/products/{filename}")
+                log.info("Фото товара %s сохранено: %s (%s байт)", product_id, filename, target.stat().st_size)
             except Exception:
-                log.exception("Не удалось сохранить фото товара %s", product_id)
+                log.exception("Не удалось сохранить фото товара %s (file_id=%s)", product_id, file_id)
         product.image_urls = json.dumps(current + urls, ensure_ascii=False)
         await session.commit()
+        log.info("Для товара %s записано фотографий: %s", product_id, len(product.images))
     return urls
 
 
