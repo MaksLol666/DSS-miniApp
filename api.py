@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qsl
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select, text
@@ -44,6 +44,10 @@ SUSPICIOUS_ADDS = max(5, int(os.getenv("DDOS_GUARD_SUSPICIOUS_CART_ADDS", "8")))
 SUSPICIOUS_WINDOW = max(5, int(os.getenv("DDOS_GUARD_SUSPICIOUS_WINDOW_SECONDS", "20")))
 _requests: dict[str, deque] = defaultdict(deque)
 _cart_adds: dict[str, deque] = defaultdict(deque)
+PRODUCT_UPLOAD_DIR = Path("data/uploads/products").resolve()
+PRODUCT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+ALLOWED_PRODUCT_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024
 CAPTCHA_EXEMPT = {"/api/health", "/api/auth", "/api/captcha/config", "/api/captcha/status", "/api/captcha/verify"}
 
 
@@ -350,7 +354,7 @@ async def products(category_id: int | None = None, user: dict = Depends(current_
         if category_id is not None:
             query = query.where(Product.category_id == category_id)
         rows = (await session.execute(query.order_by(Product.category_id, Product.number))).scalars().all()
-        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0)} for p in rows]
+        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0), "images": p.images} for p in rows]
 
 
 @app.get("/api/cart")
@@ -648,6 +652,68 @@ async def admin_product_create(data: ProductInput, user: dict = Depends(admin_us
         await session.commit()
         await session.refresh(product)
         return {"id": product.id, "number": product.number}
+
+
+
+@app.post("/api/admin/products/{product_id}/images")
+async def admin_product_upload_images(product_id: int, files: list[UploadFile] = File(...), user: dict = Depends(admin_user)):
+    if not files or len(files) > 5:
+        raise HTTPException(400, "Можно загрузить от 1 до 5 фотографий за раз.")
+    saved: list[str] = []
+    async with SessionLocal() as session:
+        product = await session.get(Product, product_id)
+        if not product:
+            raise HTTPException(404, "Товар не найден.")
+        existing = product.images
+        if len(existing) + len(files) > 5:
+            raise HTTPException(400, "У товара может быть не больше 5 фотографий.")
+        try:
+            for upload in files:
+                extension = ALLOWED_PRODUCT_IMAGE_TYPES.get(upload.content_type or "")
+                if not extension:
+                    raise HTTPException(415, "Поддерживаются только JPG, PNG и WEBP.")
+                content = await upload.read(MAX_PRODUCT_IMAGE_SIZE + 1)
+                if not content or len(content) > MAX_PRODUCT_IMAGE_SIZE:
+                    raise HTTPException(413, "Размер одной фотографии — не более 5 МБ.")
+                filename = f"{product_id}_{secrets.token_hex(12)}{extension}"
+                (PRODUCT_UPLOAD_DIR / filename).write_bytes(content)
+                saved.append(f"/uploads/products/{filename}")
+            product.image_urls = json.dumps(existing + saved, ensure_ascii=False)
+            await session.commit()
+        except Exception:
+            for url in saved:
+                (PRODUCT_UPLOAD_DIR / Path(url).name).unlink(missing_ok=True)
+            raise
+    return {"images": existing + saved}
+
+
+@app.delete("/api/admin/products/{product_id}/images/{image_index}")
+async def admin_product_delete_image(product_id: int, image_index: int, user: dict = Depends(admin_user)):
+    async with SessionLocal() as session:
+        product = await session.get(Product, product_id)
+        if not product:
+            raise HTTPException(404, "Товар не найден.")
+        images = product.images
+        if image_index < 0 or image_index >= len(images):
+            raise HTTPException(404, "Фотография не найдена.")
+        removed = images.pop(image_index)
+        product.image_urls = json.dumps(images, ensure_ascii=False)
+        await session.commit()
+    filename = Path(removed).name
+    if filename and Path(filename).name == filename:
+        (PRODUCT_UPLOAD_DIR / filename).unlink(missing_ok=True)
+    return {"images": images}
+
+
+@app.get("/uploads/products/{filename}")
+async def product_image(filename: str):
+    safe_name = Path(filename).name
+    if safe_name != filename or not re.fullmatch(r"[0-9]+_[a-f0-9]{24}\\.(jpg|png|webp)", safe_name):
+        raise HTTPException(404, "Фотография не найдена.")
+    target = PRODUCT_UPLOAD_DIR / safe_name
+    if not target.is_file():
+        raise HTTPException(404, "Фотография не найдена.")
+    return FileResponse(target)
 
 
 @app.put("/api/admin/products/{product_id}")
