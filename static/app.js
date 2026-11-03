@@ -212,7 +212,7 @@ function renderProductGrid() {
   }
   grid.innerHTML = products.map(p => {
     const inCart = (state.cart.items || []).find(i => i.product_id === p.id);
-    return '<article class="product-card"><div class="product-art"><span class="product-no">№ ' + esc(p.number) + '</span><span class="stock-dot"></span><span class="product-symbol">' + productSymbol(p) + '</span></div>' +
+    return '<article class="product-card"><div class="product-art">' + (p.images && p.images.length ? '<img src="' + esc(p.images[0]) + '" alt="' + esc(p.brand) + '" style="width:100%;height:100%;object-fit:cover;border-radius:14px">' : '<span class="product-symbol">' + productSymbol(p) + '</span>') + '<span class="product-no">№ ' + esc(p.number) + '</span><span class="stock-dot"></span></div>' +
       '<div class="product-body"><div class="product-brand">' + esc(p.brand) + '</div><div class="product-flavor">' + esc(p.flavor) + '</div><div class="item-sub" style="margin-top:6px">В наличии: ' + Number(p.stock_qty || 0) + ' шт.</div><div class="product-foot"><div class="price">' + money(p.price) + '</div>' +
       (inCart ? '<span class="muted">В корзине: ' + Number(inCart.quantity || 1) + '</span>' : '') +
       '<button class="add-button" data-action="add-cart" data-id="' + p.id + '" aria-label="Добавить в корзину" ' + (inCart && Number(inCart.quantity || 1) >= Number(p.stock_qty || 0) ? 'disabled' : '') + '>+</button></div></div></article>';
@@ -322,6 +322,19 @@ function renderAdmin() {
   return '<div class="section-head"><div><h1 class="section-title">Админ-панель</h1><div class="section-sub">Управление магазином</div></div><button class="mini-link" data-action="go" data-page="profile">Закрыть</button></div>' + adminTabs() + '<div id="admin-body">' + body + '</div>';
 }
 
+async function uploadProductImages(productId, files) {
+  if (!files || !files.length) return;
+  if (files.length > 5) throw new Error('Можно выбрать не больше 5 фотографий.');
+  const body = new FormData();
+  Array.from(files).forEach(file => body.append('files', file));
+  const headers = {};
+  if (initData) headers['X-Init-Data'] = initData;
+  const response = await fetch('/api/admin/products/' + productId + '/images', { method: 'POST', headers, body, credentials: 'include' });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.detail || 'Не удалось загрузить фотографии.');
+  return result;
+}
+
 async function loadBase() {
   const result = await Promise.all([api('/api/categories'), api('/api/products'), api('/api/cart'), api('/api/profile')]);
   state.categories = result[0]; state.products = result[1]; state.cart = result[2]; state.profile = result[3];
@@ -415,6 +428,10 @@ async function action(button) {
     try { await api('/api/admin/products/' + id, { method: 'PUT', body: JSON.stringify(payload) }); await loadAdminTab('products'); render(); toast('Товар сохранён'); }
     catch (error) { toast(error.message); } return;
   }
+  if (name === 'delete-product-image') {
+    try { await api('/api/admin/products/' + id + '/images/' + Number(button.dataset.index), { method: 'DELETE' }); await loadAdminTab('products'); render(); toast('Фотография удалена'); }
+    catch (error) { toast(error.message); } return;
+  }
   if (name === 'toggle-product') {
     const product = state.adminProducts.find(p => p.id === id);
     if (!product) return;
@@ -464,8 +481,13 @@ document.addEventListener('input', event => {
   const input = document.getElementById('catalog-search');
   if (input) { input.focus(); input.setSelectionRange(cursor, cursor); }
 });
-document.addEventListener('change', event => {
-  if (event.target.name === 'delivery') { state.delivery = event.target.value; render(); }
+document.addEventListener('change', async event => {
+  if (event.target.name === 'delivery') { state.delivery = event.target.value; render(); return; }
+  const input = event.target.closest('[data-product-images]');
+  if (input && input.files && input.files.length) {
+    try { await uploadProductImages(Number(input.dataset.productImages), input.files); await loadAdminTab('products'); render(); toast('Фотографии загружены'); }
+    catch (error) { toast(error.message); input.value = ''; }
+  }
 });
 document.addEventListener('submit', async event => {
   const form = event.target;
@@ -487,7 +509,9 @@ document.addEventListener('submit', async event => {
       await api('/api/review', { method: 'POST', body: JSON.stringify({ order_id: Number(form.dataset.orderId), rating: Number(data.get('rating')), text: String(data.get('text') || '').trim() }) });
       state.reviewOrder = 0; state.orders = await api('/api/orders'); render(); toast('Спасибо за отзыв!');
     } else if (form.id === 'admin-product-form') {
-      await api('/api/admin/products', { method: 'POST', body: JSON.stringify({ category_id: Number(data.get('category_id')), brand: String(data.get('brand') || '').trim(), flavor: String(data.get('flavor') || '').trim(), price: Number(data.get('price')), stock_qty: Number(data.get('stock_qty')) }) });
+      const created = await api('/api/admin/products', { method: 'POST', body: JSON.stringify({ category_id: Number(data.get('category_id')), brand: String(data.get('brand') || '').trim(), flavor: String(data.get('flavor') || '').trim(), price: Number(data.get('price')), stock_qty: Number(data.get('stock_qty')) }) });
+      const photos = form.querySelector('[name="images"]').files;
+      if (photos.length) await uploadProductImages(created.id, photos);
       await loadAdminTab('products'); render(); toast('Товар добавлен');
     } else if (form.id === 'user-search') {
       state.adminQuery = String(data.get('q') || '').trim();
