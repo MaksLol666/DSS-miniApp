@@ -169,7 +169,9 @@ async def _attach_product_photos(product_id: int, file_ids: list[str]) -> list[s
             try:
                 info = await _bot.get_file(file_id)
                 ext = Path(info.file_path or "").suffix.lower()
-                if ext not in (".jpg", ".jpeg", ".png", ".webp"):
+                if ext == ".jpeg":
+                    ext = ".jpg"
+                if ext not in (".jpg", ".png", ".webp"):
                     ext = ".jpg"
                 filename = f"{product_id}_{secrets.token_hex(12)}{ext}"
                 target = directory / filename
