@@ -329,8 +329,14 @@ async function uploadProductImages(productId, files) {
   Array.from(files).forEach(file => body.append('files', file));
   const headers = {};
   if (initData) headers['X-Init-Data'] = initData;
-  const response = await fetch('/api/admin/products/' + productId + '/images', { method: 'POST', headers, body, credentials: 'include' });
-  const result = await response.json().catch(() => ({}));
+  const send = () => fetch('/api/admin/products/' + productId + '/images', { method: 'POST', headers, body, credentials: 'include' });
+  let response = await send();
+  let result = await response.json().catch(() => ({}));
+  if (response.status === 428 && result.detail === 'CAPTCHA_REQUIRED') {
+    await showCaptcha();
+    response = await send();
+    result = await response.json().catch(() => ({}));
+  }
   if (!response.ok) throw new Error(result.detail || 'Не удалось загрузить фотографии.');
   return result;
 }
