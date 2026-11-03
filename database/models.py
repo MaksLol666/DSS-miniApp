@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 
 from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -38,6 +39,15 @@ class Product(Base):
     price: Mapped[float] = mapped_column(Float)
     in_stock: Mapped[bool] = mapped_column(Boolean, default=True)
     stock_qty: Mapped[int] = mapped_column(Integer, default=1)
+    image_urls: Mapped[str] = mapped_column(String(4096), default="[]")
+
+    @property
+    def images(self) -> list[str]:
+        try:
+            value = json.loads(self.image_urls or "[]")
+            return value if isinstance(value, list) else []
+        except (TypeError, ValueError):
+            return []
 
 
 class CartItem(Base):
