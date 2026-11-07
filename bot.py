@@ -15,6 +15,7 @@ from sqlalchemy import delete, func, select
 from config import ADMIN_ID, BOT_TOKEN, MINIAPP_URL, REVIEWS_CHANNEL_ID
 from database.db import SessionLocal
 from database.models import User, Product, Category, Order, OrderItem, Promocode, CartPromo, Review
+from image_utils import optimize_product_image
 
 log = logging.getLogger("dss.bot")
 BOT_USERNAME: str | None = None
@@ -168,20 +169,21 @@ async def _attach_product_photos(product_id: int, file_ids: list[str]) -> list[s
         for file_id in file_ids[:max(0, 5 - len(current))]:
             try:
                 info = await _bot.get_file(file_id)
-                ext = Path(info.file_path or "").suffix.lower()
-                if ext == ".jpeg":
-                    ext = ".jpg"
-                if ext not in (".jpg", ".png", ".webp"):
-                    ext = ".jpg"
-                filename = f"{product_id}_{secrets.token_hex(12)}{ext}"
+                filename = f"{product_id}_{secrets.token_hex(12)}.webp"
                 target = directory / filename
+                temporary = target.with_suffix(".upload")
                 if not info.file_path:
                     raise RuntimeError("Telegram не вернул путь к файлу фотографии")
-                await _bot.download_file(info.file_path, destination=target)
-                if not target.is_file() or target.stat().st_size == 0:
-                    raise RuntimeError("Скачанный файл фотографии пуст")
+                try:
+                    await _bot.download_file(info.file_path, destination=temporary)
+                    if not temporary.is_file() or temporary.stat().st_size == 0:
+                        raise RuntimeError("Скачанный файл фотографии пуст")
+                    optimized = await asyncio.to_thread(optimize_product_image, temporary.read_bytes())
+                    target.write_bytes(optimized)
+                finally:
+                    temporary.unlink(missing_ok=True)
                 urls.append(f"/uploads/products/{filename}")
-                log.info("Фото товара %s сохранено: %s (%s байт)", product_id, filename, target.stat().st_size)
+                log.info("Фото товара %s сжато и сохранено: %s (%s байт)", product_id, filename, target.stat().st_size)
             except Exception:
                 log.exception("Не удалось сохранить фото товара %s (file_id=%s)", product_id, file_id)
         product.image_urls = json.dumps(current + urls, ensure_ascii=False)
