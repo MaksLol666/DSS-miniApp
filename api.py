@@ -27,6 +27,7 @@ from config import (
 )
 from database.db import SessionLocal, engine, init_db
 from database.models import CartItem, CartPromo, Category, Order, OrderItem, Product, Promocode, Review, User
+from image_utils import optimize_product_image
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("dss.api")
@@ -669,15 +670,19 @@ async def admin_product_upload_images(product_id: int, files: list[UploadFile] =
             raise HTTPException(400, "У товара может быть не больше 5 фотографий.")
         try:
             for upload in files:
-                extension = ALLOWED_PRODUCT_IMAGE_TYPES.get(upload.content_type or "")
-                if not extension:
+                if (upload.content_type not in ALLOWED_PRODUCT_IMAGE_TYPES):
                     raise HTTPException(415, "Поддерживаются только JPG, PNG и WEBP.")
                 content = await upload.read(MAX_PRODUCT_IMAGE_SIZE + 1)
                 if not content or len(content) > MAX_PRODUCT_IMAGE_SIZE:
                     raise HTTPException(413, "Размер одной фотографии — не более 5 МБ.")
-                filename = f"{product_id}_{secrets.token_hex(12)}{extension}"
-                (PRODUCT_UPLOAD_DIR / filename).write_bytes(content)
+                try:
+                    optimized = await asyncio.to_thread(optimize_product_image, content)
+                except ValueError as exc:
+                    raise HTTPException(415, str(exc)) from exc
+                filename = f"{product_id}_{secrets.token_hex(12)}.webp"
+                (PRODUCT_UPLOAD_DIR / filename).write_bytes(optimized)
                 saved.append(f"/uploads/products/{filename}")
+                log.info("Product image optimized: %s -> %s bytes", len(content), len(optimized))
             product.image_urls = json.dumps(existing + saved, ensure_ascii=False)
             await session.commit()
         except Exception:
