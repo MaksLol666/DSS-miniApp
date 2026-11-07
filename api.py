@@ -718,7 +718,7 @@ async def product_image(filename: str):
     target = PRODUCT_UPLOAD_DIR / safe_name
     if not target.is_file():
         raise HTTPException(404, "Фотография не найдена.")
-    return FileResponse(target)
+    return FileResponse(target, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @app.put("/api/admin/products/{product_id}")
