@@ -381,7 +381,7 @@ def _totals(items: list[dict], promos: list[Promocode]) -> dict:
     percent_amount = 0.0
     fixed_amount = 0.0
     for promo in promos:
-        if not _promo_is_active(promo) or subtotal + 0.001 < float(promo.min_order or 0):
+        if promo.used or int(promo.used_count or 0) >= int(promo.max_uses or 1) or not _promo_is_active(promo) or subtotal + 0.001 < float(promo.min_order or 0):
             continue
         eligible_indexes = [idx for idx, item in enumerate(items) if _promo_matches_item(promo, item) and remaining[idx] > 0]
         eligible_total = sum(remaining[idx] for idx in eligible_indexes)
@@ -415,7 +415,7 @@ async def _cart(uid: int) -> dict:
         items = [{"product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0)} for item, p in rows]
         codes = await _promo_codes(session, uid)
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
-        return {"items": items, **_totals(items, promos), "promos": [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "target_type": p.target_type, "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": _promo_datetime_to_local(p.starts_at), "expires_at": _promo_datetime_to_local(p.expires_at), "applicable": _promo_is_active(p) and sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items) + 0.001 >= float(p.min_order or 0) and any(_promo_matches_item(p, i) for i in items)} for p in promos]}
+        return {"items": items, **_totals(items, promos), "promos": [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "target_type": p.target_type, "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": _promo_datetime_to_local(p.starts_at), "expires_at": _promo_datetime_to_local(p.expires_at), "applicable": not p.used and int(p.used_count or 0) < int(p.max_uses or 1) and _promo_is_active(p) and sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items) + 0.001 >= float(p.min_order or 0) and any(_promo_matches_item(p, i) for i in items)} for p in promos]}
 
 
 @app.get("/api/categories")
