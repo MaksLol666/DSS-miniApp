@@ -358,6 +358,12 @@ def _promo_is_active(promo: Promocode, now: datetime | None = None) -> bool:
     return not ((promo.starts_at and now < promo.starts_at) or (promo.expires_at and now > promo.expires_at))
 
 
+def _promo_datetime_to_local(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/Moscow")).strftime("%Y-%m-%dT%H:%M")
+
+
 def _validate_promo_for_items(promo: Promocode, items: list[dict]) -> None:
     if not _promo_is_active(promo):
         raise HTTPException(409, "Срок действия промокода ещё не начался или уже закончился.")
@@ -375,6 +381,8 @@ def _totals(items: list[dict], promos: list[Promocode]) -> dict:
     percent_amount = 0.0
     fixed_amount = 0.0
     for promo in promos:
+        if not _promo_is_active(promo) or subtotal + 0.001 < float(promo.min_order or 0):
+            continue
         eligible_indexes = [idx for idx, item in enumerate(items) if _promo_matches_item(promo, item) and remaining[idx] > 0]
         eligible_total = sum(remaining[idx] for idx in eligible_indexes)
         if eligible_total <= 0:
@@ -407,7 +415,7 @@ async def _cart(uid: int) -> dict:
         items = [{"product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0)} for item, p in rows]
         codes = await _promo_codes(session, uid)
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
-        return {"items": items, **_totals(items, promos), "promos": [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "target_type": p.target_type, "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": p.starts_at.isoformat() if p.starts_at else None, "expires_at": p.expires_at.isoformat() if p.expires_at else None} for p in promos]}
+        return {"items": items, **_totals(items, promos), "promos": [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "target_type": p.target_type, "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": _promo_datetime_to_local(p.starts_at), "expires_at": _promo_datetime_to_local(p.expires_at), "applicable": _promo_is_active(p) and sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items) + 0.001 >= float(p.min_order or 0) and any(_promo_matches_item(p, i) for i in items)} for p in promos]}
 
 
 @app.get("/api/categories")
@@ -943,7 +951,7 @@ async def admin_user_reset(user_id: int, user: dict = Depends(admin_user)):
 async def admin_promos(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(Promocode).order_by(Promocode.created_by, Promocode.code).limit(500))).scalars().all()
-        return [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "owner_id": p.owner_id, "used": bool(p.used), "used_count": p.used_count, "max_uses": p.max_uses, "created_by": p.created_by, "target_type": p.target_type or "all", "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": p.starts_at.isoformat() if p.starts_at else None, "expires_at": p.expires_at.isoformat() if p.expires_at else None, "active": _promo_is_active(p)} for p in rows]
+        return [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "owner_id": p.owner_id, "used": bool(p.used), "used_count": p.used_count, "max_uses": p.max_uses, "created_by": p.created_by, "target_type": p.target_type or "all", "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": _promo_datetime_to_local(p.starts_at), "expires_at": _promo_datetime_to_local(p.expires_at), "active": _promo_is_active(p)} for p in rows]
 
 
 @app.post("/api/admin/promos")
