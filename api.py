@@ -136,6 +136,7 @@ class ProductInput(BaseModel):
     flavor: str = Field(min_length=1, max_length=64)
     price: float = Field(gt=0, le=10000000)
     stock_qty: int = Field(default=1, ge=0, le=1000000)
+    cost_price: float | None = Field(default=None, ge=0, le=10000000)
 
 
 class ProductPatch(BaseModel):
@@ -145,6 +146,7 @@ class ProductPatch(BaseModel):
     price: float | None = Field(default=None, gt=0, le=10000000)
     in_stock: bool | None = None
     stock_qty: int | None = Field(default=None, ge=0, le=1000000)
+    cost_price: float | None = Field(default=None, ge=0, le=10000000)
 
 
 class ProductId(BaseModel):
@@ -472,7 +474,9 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         await session.flush()
         for cart_item, p in rows:
             quantity = int(cart_item.quantity or 1)
-            session.add(OrderItem(order_id=order.id, product_id=p.id, price=float(p.price), quantity=quantity))
+            session.add(OrderItem(order_id=order.id, product_id=p.id, price=float(p.price), quantity=quantity,
+                cost_price_snapshot=float(p.cost_price) if p.cost_price is not None else None,
+                brand_snapshot=p.brand, flavor_snapshot=p.flavor))
             p.stock_qty = max(0, int(p.stock_qty or 0) - quantity)
             p.in_stock = p.stock_qty > 0
         await session.execute(delete(CartItem).where(CartItem.user_id == user["id"]))
@@ -492,7 +496,7 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
 
 async def _order_items(session, order_id: int) -> list[dict]:
     rows = (await session.execute(select(OrderItem, Product).join(Product, OrderItem.product_id == Product.id).where(OrderItem.order_id == order_id).order_by(OrderItem.id))).all()
-    return [{"product_id": p.id, "brand": p.brand, "flavor": p.flavor, "price": float(item.price), "quantity": int(item.quantity or 1)} for item, p in rows]
+    return [{"product_id": p.id, "brand": item.brand_snapshot or p.brand, "flavor": item.flavor_snapshot or p.flavor, "price": float(item.price), "quantity": int(item.quantity or 1)} for item, p in rows]
 
 
 @app.get("/api/orders")
@@ -639,7 +643,7 @@ async def _process_order(order_id: int, approve: bool) -> dict:
 async def admin_products(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(Product).order_by(Product.category_id, Product.number, Product.id))).scalars().all()
-        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0), "images": p.images} for p in rows]
+        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0), "images": p.images} for p in rows]
 
 
 @app.post("/api/admin/products")
@@ -648,7 +652,7 @@ async def admin_product_create(data: ProductInput, user: dict = Depends(admin_us
         if not await session.get(Category, data.category_id):
             raise HTTPException(404, "Категория не найдена.")
         n = (await session.execute(select(func.max(Product.number)).where(Product.category_id == data.category_id))).scalar() or 0
-        product = Product(category_id=data.category_id, number=n + 1, brand=data.brand.strip(), flavor=data.flavor.strip(), price=data.price, stock_qty=data.stock_qty, in_stock=data.stock_qty > 0)
+        product = Product(category_id=data.category_id, number=n + 1, brand=data.brand.strip(), flavor=data.flavor.strip(), price=data.price, cost_price=data.cost_price, stock_qty=data.stock_qty, in_stock=data.stock_qty > 0)
         session.add(product)
         await session.commit()
         await session.refresh(product)
@@ -777,7 +781,12 @@ async def admin_orders(status: str | None = None, user: dict = Depends(admin_use
             buyer = await session.get(User, o.user_id)
             result.append({"id": o.id, "user_id": o.user_id, "username": buyer.username if buyer else None, "total": float(o.total), "status": o.status,
                 "delivery_type": o.delivery_type, "delivery_name": o.delivery_name, "delivery_phone": o.delivery_phone, "delivery_address": o.delivery_address,
-                "promo_codes": o.promo_codes, "created_at": o.created_at.isoformat() if o.created_at else "", "items": await _order_items(session, o.id)})
+                "promo_codes": o.promo_codes, "created_at": o.created_at.isoformat() if o.created_at else "", "items": [
+                    {"product_id": item.product_id, "brand": item.brand_snapshot or product.brand, "flavor": item.flavor_snapshot or product.flavor,
+                     "price": float(item.price), "quantity": int(item.quantity or 1),
+                     "cost_price": float(item.cost_price_snapshot) if item.cost_price_snapshot is not None else None}
+                    for item, product in (await session.execute(select(OrderItem, Product).join(Product, OrderItem.product_id == Product.id).where(OrderItem.order_id == o.id).order_by(OrderItem.id))).all()
+                ]})
         return result
 
 
@@ -896,24 +905,67 @@ async def admin_promo_delete(code: str, user: dict = Depends(admin_user)):
 
 
 @app.get("/api/admin/stats")
-async def admin_stats(user: dict = Depends(admin_user)):
+async def admin_stats(period: str = "30d", user: dict = Depends(admin_user)):
+    if period not in ("today", "yesterday", "7d", "30d", "all"):
+        raise HTTPException(400, "Неизвестный период статистики.")
     now = datetime.utcnow()
+    if period == "today":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+    elif period == "yesterday":
+        end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = end - timedelta(days=1)
+    elif period == "7d":
+        start, end = now - timedelta(days=7), None
+    elif period == "30d":
+        start, end = now - timedelta(days=30), None
+    else:
+        start, end = None, None
     async with SessionLocal() as session:
         total_users = (await session.execute(select(func.count(User.id)))).scalar() or 0
-        total_orders = (await session.execute(select(func.count(Order.id)).where(Order.status == "approved"))).scalar() or 0
         pending = (await session.execute(select(func.count(Order.id)).where(Order.status == "pending"))).scalar() or 0
-        revenue = (await session.execute(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == "approved"))).scalar() or 0
-        day = (await session.execute(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == "approved", Order.created_at >= now - timedelta(days=1)))).scalar() or 0
-        week = (await session.execute(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == "approved", Order.created_at >= now - timedelta(days=7)))).scalar() or 0
-        counts = (await session.execute(select(OrderItem.product_id, func.sum(OrderItem.quantity).label("n")).group_by(OrderItem.product_id).order_by(func.sum(OrderItem.quantity).desc()).limit(5))).all()
-        top = []
-        for product_id, count in counts:
-            p = await session.get(Product, product_id)
-            if p:
-                top.append({"brand": p.brand, "flavor": p.flavor, "count": int(count)})
-    return {"total_users": int(total_users), "total_orders": int(total_orders), "pending_orders": int(pending),
-        "total_revenue": float(revenue), "revenue_day": float(day), "revenue_week": float(week),
-        "avg_check": float(revenue) / total_orders if total_orders else 0, "top_products": top}
+        order_query = select(Order).where(Order.status == "approved")
+        if start is not None: order_query = order_query.where(Order.created_at >= start)
+        if end is not None: order_query = order_query.where(Order.created_at < end)
+        orders_rows = (await session.execute(order_query.order_by(Order.created_at.desc()))).scalars().all()
+        order_count = len(orders_rows)
+        revenue = sum(max(0.0, float(o.total) - (DELIVERY_PRICE if o.delivery_type == "cdek" else 0.0)) for o in orders_rows)
+        item_query = select(OrderItem, Order).join(Order, Order.id == OrderItem.order_id).where(Order.status == "approved")
+        if start is not None: item_query = item_query.where(Order.created_at >= start)
+        if end is not None: item_query = item_query.where(Order.created_at < end)
+        item_rows = (await session.execute(item_query)).all()
+        cogs = 0.0
+        tracked_units = untracked_units = 0
+        products = {}
+        for item, _order in item_rows:
+            qty = int(item.quantity or 1)
+            if item.cost_price_snapshot is None: untracked_units += qty
+            else:
+                cogs += float(item.cost_price_snapshot) * qty
+                tracked_units += qty
+            entry = products.setdefault(item.product_id, {"brand": item.brand_snapshot or f"Товар #{item.product_id}", "flavor": item.flavor_snapshot or "", "quantity": 0, "revenue": 0.0, "cost": 0.0, "cost_tracked": True})
+            entry["quantity"] += qty
+            entry["revenue"] += float(item.price) * qty
+            if item.cost_price_snapshot is None: entry["cost_tracked"] = False
+            else: entry["cost"] += float(item.cost_price_snapshot) * qty
+        top_products = sorted(products.values(), key=lambda x: x["quantity"], reverse=True)[:5]
+        top_profit_products = sorted(({"brand": p["brand"], "flavor": p["flavor"], "profit": round(p["revenue"] - p["cost"], 2), "cost_tracked": p["cost_tracked"]} for p in products.values()), key=lambda x: x["profit"], reverse=True)[:5]
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = now - timedelta(days=7)
+        day_orders = [o for o in orders_rows if o.created_at and o.created_at >= day_start]
+        week_orders = [o for o in orders_rows if o.created_at and o.created_at >= week_start]
+        revenue_day = sum(max(0.0, float(o.total) - (DELIVERY_PRICE if o.delivery_type == "cdek" else 0.0)) for o in day_orders)
+        revenue_week = sum(max(0.0, float(o.total) - (DELIVERY_PRICE if o.delivery_type == "cdek" else 0.0)) for o in week_orders)
+    return {
+        "period": period, "total_users": int(total_users), "total_orders": order_count,
+        "pending_orders": int(pending), "total_revenue": round(revenue, 2),
+        "total_cost": round(cogs, 2), "gross_profit": round(revenue - cogs, 2),
+        "revenue_day": round(revenue_day, 2), "revenue_week": round(revenue_week, 2),
+        "avg_check": round(revenue / order_count, 2) if order_count else 0,
+        "tracked_units": tracked_units, "untracked_units": untracked_units,
+        "cost_coverage": round(tracked_units / (tracked_units + untracked_units) * 100, 1) if tracked_units + untracked_units else 100.0,
+        "top_products": top_products, "top_profit_products": top_profit_products,
+    }
 
 
 async def _broadcast(text_to_send: str):
