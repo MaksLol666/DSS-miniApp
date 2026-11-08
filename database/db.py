@@ -41,6 +41,18 @@ async def init_db() -> None:
             for column, sql_type in (("cost_price_snapshot", "FLOAT"), ("brand_snapshot", "VARCHAR(64)"), ("flavor_snapshot", "VARCHAR(64)")):
                 if column not in order_item_columns:
                     await connection.exec_driver_sql(f"ALTER TABLE order_items ADD COLUMN {column} {sql_type}")
+            result = await connection.exec_driver_sql("PRAGMA table_info(promocodes)")
+            promo_columns = {row[1] for row in result.fetchall()}
+            promo_migrations = (
+                ("target_type", "VARCHAR(16) NOT NULL DEFAULT 'all'"),
+                ("target_id", "INTEGER"),
+                ("min_order", "FLOAT NOT NULL DEFAULT 0"),
+                ("starts_at", "DATETIME"),
+                ("expires_at", "DATETIME"),
+            )
+            for column, sql_type in promo_migrations:
+                if column not in promo_columns:
+                    await connection.exec_driver_sql(f"ALTER TABLE promocodes ADD COLUMN {column} {sql_type}")
             result = await connection.exec_driver_sql("PRAGMA table_info(reviews)")
             review_columns = {row[1] for row in result.fetchall()}
             if "status" not in review_columns:
