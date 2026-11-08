@@ -11,7 +11,6 @@ import urllib.request
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.parse import parse_qsl
 
@@ -347,7 +346,7 @@ def _promo_datetime(value: str | None) -> datetime | None:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=ZoneInfo("Europe/Moscow"))
+            parsed = parsed.replace(tzinfo=timezone(timedelta(hours=3)))
         return parsed.astimezone(timezone.utc).replace(tzinfo=None)
     except (ValueError, TypeError):
         raise HTTPException(400, "Проверь дату и время действия промокода.")
@@ -361,7 +360,7 @@ def _promo_is_active(promo: Promocode, now: datetime | None = None) -> bool:
 def _promo_datetime_to_local(value: datetime | None) -> str | None:
     if value is None:
         return None
-    return value.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/Moscow")).strftime("%Y-%m-%dT%H:%M")
+    return value.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=3))).strftime("%Y-%m-%dT%H:%M")
 
 
 def _validate_promo_for_items(promo: Promocode, items: list[dict]) -> None:
