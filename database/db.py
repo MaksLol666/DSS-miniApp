@@ -27,6 +27,8 @@ async def init_db() -> None:
                 await connection.exec_driver_sql("ALTER TABLE products ADD COLUMN stock_qty INTEGER NOT NULL DEFAULT 1")
             if "image_urls" not in columns:
                 await connection.exec_driver_sql("ALTER TABLE products ADD COLUMN image_urls VARCHAR(4096) NOT NULL DEFAULT '[]'")
+            if "cost_price" not in columns:
+                await connection.exec_driver_sql("ALTER TABLE products ADD COLUMN cost_price FLOAT")
             await connection.exec_driver_sql("UPDATE products SET stock_qty = CASE WHEN in_stock = 1 THEN 1 ELSE 0 END WHERE stock_qty IS NULL OR stock_qty < 0")
             for table in ("cart_items", "order_items"):
                 result = await connection.exec_driver_sql(f"PRAGMA table_info({table})")
@@ -34,6 +36,11 @@ async def init_db() -> None:
                 if "quantity" not in columns:
                     await connection.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1")
                 await connection.exec_driver_sql(f"UPDATE {table} SET quantity = 1 WHERE quantity IS NULL OR quantity < 1")
+            result = await connection.exec_driver_sql("PRAGMA table_info(order_items)")
+            order_item_columns = {row[1] for row in result.fetchall()}
+            for column, sql_type in (("cost_price_snapshot", "FLOAT"), ("brand_snapshot", "VARCHAR(64)"), ("flavor_snapshot", "VARCHAR(64)")):
+                if column not in order_item_columns:
+                    await connection.exec_driver_sql(f"ALTER TABLE order_items ADD COLUMN {column} {sql_type}")
             result = await connection.exec_driver_sql("PRAGMA table_info(reviews)")
             review_columns = {row[1] for row in result.fetchall()}
             if "status" not in review_columns:
