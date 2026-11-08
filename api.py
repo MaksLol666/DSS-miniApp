@@ -517,6 +517,19 @@ async def apply_promo(data: dict, user: dict = Depends(current_user)):
     return {"code": promo.code, "kind": promo.kind, "amount": float(promo.amount), "target_type": promo.target_type, "target_id": promo.target_id, "min_order": float(promo.min_order or 0)}
 
 
+@app.post("/api/promo/remove")
+async def remove_applied_promo(data: dict, user: dict = Depends(current_user)):
+    code = str(data.get("code", "")).strip().upper()
+    if not re.fullmatch(r"[A-Z0-9_-]{1,16}", code):
+        raise HTTPException(400, "Проверь код промокода.")
+    async with SessionLocal() as session:
+        result = await session.execute(delete(CartPromo).where(CartPromo.user_id == user["id"], CartPromo.code == code))
+        await session.commit()
+        if result.rowcount == 0:
+            raise HTTPException(404, "Промокод не найден в корзине.")
+    return await _cart(user["id"])
+
+
 @app.get("/api/promo/applied")
 async def get_applied_promos(user: dict = Depends(current_user)):
     async with SessionLocal() as session:
