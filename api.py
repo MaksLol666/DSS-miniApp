@@ -937,15 +937,21 @@ async def admin_stats(period: str = "30d", user: dict = Depends(admin_user)):
         cogs = 0.0
         tracked_units = untracked_units = 0
         products = {}
-        for item, _order in item_rows:
+        order_item_gross = {}
+        for item, order in item_rows:
+            order_item_gross[order.id] = order_item_gross.get(order.id, 0.0) + float(item.price) * int(item.quantity or 1)
+        for item, order in item_rows:
             qty = int(item.quantity or 1)
             if item.cost_price_snapshot is None: untracked_units += qty
             else:
                 cogs += float(item.cost_price_snapshot) * qty
                 tracked_units += qty
+            gross_order_items = order_item_gross.get(order.id, 0.0)
+            paid_goods = max(0.0, float(order.total) - (DELIVERY_PRICE if order.delivery_type == "cdek" else 0.0))
+            allocated_revenue = (float(item.price) * qty * paid_goods / gross_order_items) if gross_order_items > 0 else 0.0
             entry = products.setdefault(item.product_id, {"brand": item.brand_snapshot or f"Товар #{item.product_id}", "flavor": item.flavor_snapshot or "", "quantity": 0, "revenue": 0.0, "cost": 0.0, "cost_tracked": True})
             entry["quantity"] += qty
-            entry["revenue"] += float(item.price) * qty
+            entry["revenue"] += allocated_revenue
             if item.cost_price_snapshot is None: entry["cost_tracked"] = False
             else: entry["cost"] += float(item.cost_price_snapshot) * qty
         top_products = sorted(products.values(), key=lambda x: x["quantity"], reverse=True)[:5]
@@ -959,7 +965,7 @@ async def admin_stats(period: str = "30d", user: dict = Depends(admin_user)):
     return {
         "period": period, "total_users": int(total_users), "total_orders": order_count,
         "pending_orders": int(pending), "total_revenue": round(revenue, 2),
-        "total_cost": round(cogs, 2), "gross_profit": round(revenue - cogs, 2),
+        "total_cost": round(cogs, 2), "gross_profit": round(revenue - cogs, 2) if untracked_units == 0 else None,
         "revenue_day": round(revenue_day, 2), "revenue_week": round(revenue_week, 2),
         "avg_check": round(revenue / order_count, 2) if order_count else 0,
         "tracked_units": tracked_units, "untracked_units": untracked_units,
