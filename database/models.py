@@ -96,6 +96,11 @@ class Promocode(Base):
     created_by: Mapped[str] = mapped_column(String(8), default="system")
     max_uses: Mapped[int] = mapped_column(Integer, default=1)
     used_count: Mapped[int] = mapped_column(Integer, default=0)
+    target_type: Mapped[str] = mapped_column(String(16), default="all")
+    target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    min_order: Mapped[float] = mapped_column(Float, default=0.0)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class CartPromo(Base):
