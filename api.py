@@ -731,7 +731,9 @@ async def admin_product_update(product_id: int, data: ProductPatch, user: dict =
         if values.get("category_id") is not None and not await session.get(Category, values["category_id"]):
             raise HTTPException(404, "Категория не найдена.")
         for key, value in values.items():
-            if value is not None:
+            if key == "cost_price":
+                p.cost_price = value
+            elif value is not None:
                 setattr(p, key, value.strip() if key in ("brand", "flavor") else value)
         if "stock_qty" in values and values["stock_qty"] is not None:
             p.in_stock = values["stock_qty"] > 0
