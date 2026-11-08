@@ -122,6 +122,10 @@ async def _stats_text() -> str:
         pending = (await session.execute(select(func.count(Order.id)).where(Order.status == "pending"))).scalar() or 0
         revenue = (await session.execute(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == "approved"))).scalar() or 0
         products = (await session.execute(select(func.count(Product.id)).where(Product.in_stock.is_(True), Product.stock_qty > 0))).scalar() or 0
+        inventory_value = (await session.execute(select(func.coalesce(func.sum(Product.cost_price * Product.stock_qty), 0)).where(Product.cost_price.is_not(None)))).scalar() or 0
+        inventory_untracked = (await session.execute(select(func.coalesce(func.sum(Product.stock_qty), 0)).where(Product.stock_qty > 0, Product.cost_price.is_(None)))).scalar() or 0
+        sold_cost = (await session.execute(select(func.coalesce(func.sum(OrderItem.cost_price_snapshot * OrderItem.quantity), 0)).join(Order, Order.id == OrderItem.order_id).where(Order.status == "approved", OrderItem.cost_price_snapshot.is_not(None)))).scalar() or 0
+        sold_untracked = (await session.execute(select(func.coalesce(func.sum(OrderItem.quantity), 0)).join(Order, Order.id == OrderItem.order_id).where(Order.status == "approved", OrderItem.cost_price_snapshot.is_(None)))).scalar() or 0
         top_rows = (await session.execute(select(OrderItem.product_id, func.count(OrderItem.id).label("n")).group_by(OrderItem.product_id).order_by(func.count(OrderItem.id).desc()).limit(5))).all()
         top = []
         for product_id, count in top_rows:
@@ -130,7 +134,11 @@ async def _stats_text() -> str:
                 top.append(f"• {p.brand} — {p.flavor}: {count} шт.")
     return ("📊 СТАТИСТИКА DSS\n\n"
         f"👥 Пользователей: {users}\n📦 Подтверждено заказов: {orders}\n⏳ Ожидают решения: {pending}\n"
-        f"💰 Выручка: {float(revenue):.0f} ₽\n🛒 Активных позиций каталога: {products}\n\n"
+        f"💰 Выручка: {float(revenue):.0f} ₽\n🛒 Активных позиций каталога: {products}\n"
+        f"📦 Себестоимость подтверждённых продаж: {float(sold_cost):.0f} ₽\n"
+        f"🏪 Закупочная стоимость остатков: {float(inventory_value):.0f} ₽\n"
+        f"⚠️ Продано без сохранённой закупки: {int(sold_untracked)} шт.\n"
+        f"⚠️ Остаток без закупочной цены: {int(inventory_untracked)} шт.\n\n"
         "🏆 ТОП-ТОВАРЫ\n" + ("\n".join(top) if top else "Пока нет продаж."))
 
 
@@ -144,7 +152,8 @@ async def _show_products(message: Message):
     lines = ["📦 ТОВАРЫ (первые 30):"]
     buttons = []
     for p in rows:
-        lines.append(f"#{p.id} · {categories.get(p.category_id, 'Категория')} · {p.brand} — {p.flavor} · {p.price:.0f} ₽ · остаток {p.stock_qty} шт.")
+        cost_text = f" · закупка {p.cost_price:.2f} ₽/шт." if p.cost_price is not None else " · закупка НЕ УКАЗАНА"
+        lines.append(f"#{p.id} · {categories.get(p.category_id, 'Категория')} · {p.brand} — {p.flavor} · продажа {p.price:.0f} ₽{cost_text} · остаток {p.stock_qty} шт.")
         buttons.append([
             InlineKeyboardButton(text=f"✏️ Изменить #{p.id}", callback_data=f"adm:edit:{p.id}"),
             InlineKeyboardButton(text=f"🗑 Удалить #{p.id}", callback_data=f"adm:delete:{p.id}")
@@ -200,12 +209,13 @@ async def _create_product_from_flow(message: Message, flow: dict):
             return
         n = (await session.execute(select(func.max(Product.number)).where(Product.category_id == category.id))).scalar() or 0
         p = Product(category_id=category.id, number=n + 1, brand=flow["brand"], flavor=flow["flavor"],
-                    price=float(flow["price"]), stock_qty=int(flow["stock_qty"]), in_stock=int(flow["stock_qty"]) > 0)
+                    price=float(flow["price"]), cost_price=flow.get("cost_price"), stock_qty=int(flow["stock_qty"]), in_stock=int(flow["stock_qty"]) > 0)
         session.add(p)
         await session.commit()
         await session.refresh(p)
     saved = await _attach_product_photos(p.id, flow.get("photo_file_ids", []))
-    await message.answer(f"✅ Товар добавлен: #{p.id}\n{p.brand} — {p.flavor}\nЦена: {p.price:.0f} ₽\nОстаток: {p.stock_qty} шт.\nФотографий: {len(saved)}", reply_markup=_admin_menu())
+    cost_text = f"{p.cost_price:.2f} ₽/шт." if p.cost_price is not None else "не указана"
+    await message.answer(f"✅ Товар добавлен: #{p.id}\n{p.brand} — {p.flavor}\nЦена продажи: {p.price:.0f} ₽\nЗакупка за 1 шт.: {cost_text}\nОстаток: {p.stock_qty} шт.\nФотографий: {len(saved)}", reply_markup=_admin_menu())
 
 
 async def _broadcast(text: str):
@@ -431,7 +441,7 @@ def _register_handlers(dp: Dispatcher) -> None:
         elif action == "edit":
             pid = int(data[2])
             ADMIN_FLOW[callback.from_user.id] = {"step": "edit_product", "product_id": pid}
-            await callback.message.answer(f"Введи данные товара #{pid} одной строкой:\nБренд | вариант/вкус | цена | количество")
+            await callback.message.answer(f"Введи данные товара #{pid} одной строкой:\nБренд | вариант/вкус | цена продажи | количество | закупка за 1 шт.\n\nПример: Brand | Mint | 500 | 12 | 250\nЧтобы не менять закупочную цену, используй старый формат из 4 полей.")
         elif action == "delete":
             pid = int(data[2])
             async with SessionLocal() as session:
@@ -560,6 +570,19 @@ def _register_handlers(dp: Dispatcher) -> None:
                 await message.answer("Цена должна быть числом больше нуля. Повтори или /cancel.")
                 return
             flow["price"] = price
+            flow["step"] = "cost_price"
+            await message.answer("Укажи закупочную цену за 1 штуку в рублях. Если пока неизвестна — напиши «пропустить». Можно указать 0:")
+        elif step == "cost_price":
+            if text.lower() in ("пропустить", "пропуск", "нет", "—", "-"):
+                flow["cost_price"] = None
+            else:
+                try:
+                    cost = float(text.replace(",", "."))
+                    if cost < 0 or cost > 10000000: raise ValueError()
+                    flow["cost_price"] = cost
+                except ValueError:
+                    await message.answer("Закупочная цена должна быть числом от 0 до 10 000 000 ₽ или напиши «пропустить».")
+                    return
             flow["step"] = "stock_qty"
             await message.answer("Сколько штук есть на складе? Введи целое число, можно 0:")
         elif step == "stock_qty":
@@ -593,14 +616,15 @@ def _register_handlers(dp: Dispatcher) -> None:
             return
         elif step == "edit_product":
             parts = [x.strip() for x in text.split("|")]
-            if len(parts) != 4:
-                await message.answer("Формат: Бренд | вкус | цена | количество. Например: Brand | Mint | 500 | 12")
+            if len(parts) not in (4, 5):
+                await message.answer("Формат: Бренд | вкус | цена продажи | количество | закупка/шт. Например: Brand | Mint | 500 | 12 | 250")
                 return
             try:
                 price, qty = float(parts[2].replace(",", ".")), int(parts[3])
-                if price <= 0 or qty < 0: raise ValueError()
+                cost = float(parts[4].replace(",", ".")) if len(parts) == 5 and parts[4] else None
+                if price <= 0 or qty < 0 or (cost is not None and (cost < 0 or cost > 10000000)): raise ValueError()
             except ValueError:
-                await message.answer("Цена должна быть больше 0, количество — целым числом от 0.")
+                await message.answer("Цена продажи должна быть больше 0, количество — целым числом от 0, закупка — числом от 0.")
                 return
             async with SessionLocal() as session:
                 p = await session.get(Product, flow["product_id"])
@@ -609,6 +633,8 @@ def _register_handlers(dp: Dispatcher) -> None:
                 else:
                     p.brand, p.flavor, p.price = parts[0], parts[1], price
                     p.stock_qty, p.in_stock = qty, qty > 0
+                    if len(parts) == 5:
+                        p.cost_price = cost
                     await session.commit()
                     flow["step"] = "photos"
                     flow["photo_file_ids"] = []
