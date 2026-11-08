@@ -37,6 +37,7 @@ class Product(Base):
     brand: Mapped[str] = mapped_column(String(64))
     flavor: Mapped[str] = mapped_column(String(64))
     price: Mapped[float] = mapped_column(Float)
+    cost_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     in_stock: Mapped[bool] = mapped_column(Boolean, default=True)
     stock_qty: Mapped[int] = mapped_column(Integer, default=1)
     image_urls: Mapped[str] = mapped_column(String(4096), default="[]")
@@ -80,6 +81,9 @@ class OrderItem(Base):
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
     price: Mapped[float] = mapped_column(Float)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
+    cost_price_snapshot: Mapped[float | None] = mapped_column(Float, nullable=True)
+    brand_snapshot: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    flavor_snapshot: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Promocode(Base):
