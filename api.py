@@ -10,7 +10,8 @@ import time
 import urllib.request
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.parse import parse_qsl
 
@@ -160,9 +161,14 @@ class CartQuantityInput(ProductId):
 class PromoInput(BaseModel):
     code: str | None = Field(default=None, max_length=16)
     kind: str
-    amount: float = Field(gt=0)
+    amount: float = Field(gt=0, le=10000000)
     owner_id: int = Field(default=0, ge=0)
     max_uses: int = Field(default=1, ge=1, le=1000000)
+    target_type: str = "all"
+    target_id: int | None = Field(default=None, ge=1)
+    min_order: float = Field(default=0, ge=0, le=10000000)
+    starts_at: str | None = None
+    expires_at: str | None = None
 
 
 class CheckoutInput(BaseModel):
@@ -327,20 +333,81 @@ async def _promo_codes(session, uid: int) -> list[str]:
     return list((await session.execute(select(CartPromo.code).where(CartPromo.user_id == uid).order_by(CartPromo.id))).scalars().all())
 
 
+def _promo_matches_item(promo: Promocode, item: dict) -> bool:
+    if promo.target_type == "product":
+        return int(item.get("product_id", 0)) == int(promo.target_id or 0)
+    if promo.target_type == "category":
+        return int(item.get("category_id", 0)) == int(promo.target_id or 0)
+    return True
+
+
+def _promo_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo("Europe/Moscow"))
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Проверь дату и время действия промокода.")
+
+
+def _promo_is_active(promo: Promocode, now: datetime | None = None) -> bool:
+    now = now or datetime.utcnow()
+    return not ((promo.starts_at and now < promo.starts_at) or (promo.expires_at and now > promo.expires_at))
+
+
+def _validate_promo_for_items(promo: Promocode, items: list[dict]) -> None:
+    if not _promo_is_active(promo):
+        raise HTTPException(409, "Срок действия промокода ещё не начался или уже закончился.")
+    subtotal = sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items)
+    if subtotal + 0.001 < float(promo.min_order or 0):
+        raise HTTPException(400, f"Для промокода минимальная сумма заказа — {float(promo.min_order or 0):.0f} ₽.")
+    eligible = sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items if _promo_matches_item(promo, i))
+    if eligible <= 0:
+        raise HTTPException(400, "Этот промокод не подходит к товарам в корзине.")
+
+
 def _totals(items: list[dict], promos: list[Promocode]) -> dict:
     subtotal = round(sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items), 2)
-    percent = min(100.0, sum(float(p.amount) for p in promos if p.kind == "percent"))
-    fixed = sum(float(p.amount) for p in promos if p.kind == "fixed")
-    return {"subtotal": subtotal, "percent_discount": round(percent, 2), "fixed_discount": round(fixed, 2), "total": round(max(subtotal * (1 - percent / 100) - fixed, 0), 2)}
+    remaining = [float(i["price"]) * int(i.get("quantity", 1)) for i in items]
+    percent_amount = 0.0
+    fixed_amount = 0.0
+    for promo in promos:
+        eligible_indexes = [idx for idx, item in enumerate(items) if _promo_matches_item(promo, item) and remaining[idx] > 0]
+        eligible_total = sum(remaining[idx] for idx in eligible_indexes)
+        if eligible_total <= 0:
+            continue
+        if promo.kind == "percent":
+            discount = eligible_total * min(float(promo.amount), 100.0) / 100.0
+            percent_amount += discount
+        else:
+            discount = min(float(promo.amount), eligible_total)
+            fixed_amount += discount
+        if discount > 0:
+            factor = max(0.0, (eligible_total - discount) / eligible_total)
+            for idx in eligible_indexes:
+                remaining[idx] *= factor
+    percent_amount = round(percent_amount, 2)
+    fixed_amount = round(fixed_amount, 2)
+    total_discount = min(subtotal, percent_amount + fixed_amount)
+    return {
+        "subtotal": subtotal,
+        "percent_discount": round(sum(float(p.amount) for p in promos if p.kind == "percent"), 2),
+        "percent_discount_amount": percent_amount,
+        "fixed_discount": fixed_amount,
+        "total": round(max(subtotal - total_discount, 0), 2),
+    }
 
 
 async def _cart(uid: int) -> dict:
     async with SessionLocal() as session:
         rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == uid).order_by(CartItem.id))).all()
-        items = [{"product_id": p.id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0)} for item, p in rows]
+        items = [{"product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0)} for item, p in rows]
         codes = await _promo_codes(session, uid)
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
-        return {"items": items, **_totals(items, promos), "promos": [{"code": p.code, "kind": p.kind, "amount": float(p.amount)} for p in promos]}
+        return {"items": items, **_totals(items, promos), "promos": [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "target_type": p.target_type, "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": p.starts_at.isoformat() if p.starts_at else None, "expires_at": p.expires_at.isoformat() if p.expires_at else None} for p in promos]}
 
 
 @app.get("/api/categories")
@@ -422,6 +489,11 @@ async def apply_promo(data: dict, user: dict = Depends(current_user)):
         promo = await session.get(Promocode, code)
         if not promo or promo.used or promo.used_count >= promo.max_uses:
             raise HTTPException(404, "Промокод не найден или исчерпан.")
+        cart_rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == user["id"]))).all()
+        cart_items = [{"product_id": p.id, "category_id": p.category_id, "price": float(p.price), "quantity": int(item.quantity or 1)} for item, p in cart_rows]
+        if not cart_items:
+            raise HTTPException(400, "Сначала добавь товары в корзину.")
+        _validate_promo_for_items(promo, cart_items)
         if promo.owner_id not in (0, user["id"], ADMIN_ID):
             raise HTTPException(403, "Этот промокод выдан другому пользователю.")
         codes = await _promo_codes(session, user["id"])
@@ -435,7 +507,7 @@ async def apply_promo(data: dict, user: dict = Depends(current_user)):
         except IntegrityError:
             await session.rollback()
             raise HTTPException(409, "Промокод уже применён.")
-    return {"code": promo.code, "kind": promo.kind, "amount": float(promo.amount)}
+    return {"code": promo.code, "kind": promo.kind, "amount": float(promo.amount), "target_type": promo.target_type, "target_id": promo.target_id, "min_order": float(promo.min_order or 0)}
 
 
 @app.get("/api/promo/applied")
@@ -458,11 +530,15 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
             requested = int(cart_item.quantity or 1)
             if not p.in_stock or int(p.stock_qty or 0) < requested:
                 raise HTTPException(409, f"Для товара {p.brand} — {p.flavor} доступно {int(p.stock_qty or 0)} шт., в корзине {requested}.")
-        items = [{"product_id": p.id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "quantity": int(cart_item.quantity or 1)} for cart_item, p in rows]
+        items = [{"product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "quantity": int(cart_item.quantity or 1)} for cart_item, p in rows]
         codes = await _promo_codes(session, user["id"])
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
         if len(codes) != len(promos) or any(p.used or p.used_count >= p.max_uses for p in promos):
             raise HTTPException(409, "Один из промокодов больше недоступен.")
+        for promo in promos:
+            if promo.owner_id not in (0, user["id"], ADMIN_ID):
+                raise HTTPException(403, "Один из промокодов выдан другому пользователю.")
+            _validate_promo_for_items(promo, items)
         totals = _totals(items, promos)
         delivery_price = DELIVERY_PRICE if data.delivery_type == "cdek" else 0
         final = round(totals["total"] + delivery_price, 2)
@@ -867,23 +943,44 @@ async def admin_user_reset(user_id: int, user: dict = Depends(admin_user)):
 async def admin_promos(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(Promocode).order_by(Promocode.created_by, Promocode.code).limit(500))).scalars().all()
-        return [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "owner_id": p.owner_id, "used": bool(p.used), "used_count": p.used_count, "max_uses": p.max_uses, "created_by": p.created_by} for p in rows]
+        return [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "owner_id": p.owner_id, "used": bool(p.used), "used_count": p.used_count, "max_uses": p.max_uses, "created_by": p.created_by, "target_type": p.target_type or "all", "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": p.starts_at.isoformat() if p.starts_at else None, "expires_at": p.expires_at.isoformat() if p.expires_at else None, "active": _promo_is_active(p)} for p in rows]
 
 
 @app.post("/api/admin/promos")
 async def admin_promo_create(data: PromoInput, user: dict = Depends(admin_user)):
     if data.kind not in ("fixed", "percent") or (data.kind == "percent" and data.amount > 100):
         raise HTTPException(400, "Проверь тип и размер скидки.")
+    if data.target_type not in ("all", "product", "category"):
+        raise HTTPException(400, "Неизвестный тип ограничения промокода.")
+    if data.target_type == "all" and data.target_id is not None:
+        raise HTTPException(400, "Для промокода на весь каталог ID указывать не нужно.")
+    if data.target_type != "all" and data.target_id is None:
+        raise HTTPException(400, "Укажи ID товара или категории.")
+    starts_at = _promo_datetime(data.starts_at)
+    expires_at = _promo_datetime(data.expires_at)
+    if starts_at and expires_at and expires_at <= starts_at:
+        raise HTTPException(400, "Дата окончания должна быть позже даты начала.")
     code = (data.code or "").strip().upper()
     if code and not re.fullmatch(r"[A-Z0-9_-]{1,16}", code):
         raise HTTPException(400, "Код: латиница, цифры, дефис или подчёркивание, до 16 символов.")
     async with SessionLocal() as session:
+        if data.target_type == "product" and not await session.get(Product, data.target_id):
+            raise HTTPException(404, "Товар для ограничения не найден.")
+        if data.target_type == "category" and not await session.get(Category, data.target_id):
+            raise HTTPException(404, "Категория для ограничения не найдена.")
         if code and await session.get(Promocode, code):
             raise HTTPException(409, "Такой промокод уже существует.")
         if not code:
             code = await _create_promo(session, data.owner_id, data.kind, data.amount, data.max_uses, "admin")
+            promo = await session.get(Promocode, code)
         else:
-            session.add(Promocode(code=code, owner_id=data.owner_id, kind=data.kind, amount=round(data.amount, 2), used=False, created_by="admin", max_uses=data.max_uses, used_count=0))
+            promo = Promocode(code=code, owner_id=data.owner_id, kind=data.kind, amount=round(data.amount, 2), used=False, created_by="admin", max_uses=data.max_uses, used_count=0)
+            session.add(promo)
+        promo.target_type = data.target_type
+        promo.target_id = data.target_id
+        promo.min_order = round(data.min_order, 2)
+        promo.starts_at = starts_at
+        promo.expires_at = expires_at
         await session.commit()
     return {"ok": True, "code": code}
 
