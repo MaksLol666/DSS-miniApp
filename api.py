@@ -958,8 +958,8 @@ async def admin_stats(period: str = "30d", user: dict = Depends(admin_user)):
         top_profit_products = sorted(({"brand": p["brand"], "flavor": p["flavor"], "profit": round(p["revenue"] - p["cost"], 2), "cost_tracked": p["cost_tracked"]} for p in products.values()), key=lambda x: x["profit"], reverse=True)[:5]
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = now - timedelta(days=7)
-        day_orders = [o for o in orders_rows if o.created_at and o.created_at >= day_start]
-        week_orders = [o for o in orders_rows if o.created_at and o.created_at >= week_start]
+        day_orders = (await session.execute(select(Order).where(Order.status == "approved", Order.created_at >= day_start))).scalars().all()
+        week_orders = (await session.execute(select(Order).where(Order.status == "approved", Order.created_at >= week_start))).scalars().all()
         revenue_day = sum(max(0.0, float(o.total) - (DELIVERY_PRICE if o.delivery_type == "cdek" else 0.0)) for o in day_orders)
         revenue_week = sum(max(0.0, float(o.total) - (DELIVERY_PRICE if o.delivery_type == "cdek" else 0.0)) for o in week_orders)
     return {
