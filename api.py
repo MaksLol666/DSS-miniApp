@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select, text
@@ -47,6 +47,8 @@ _requests: dict[str, deque] = defaultdict(deque)
 _cart_adds: dict[str, deque] = defaultdict(deque)
 PRODUCT_UPLOAD_DIR = Path("data/uploads/products").resolve()
 PRODUCT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+REVIEW_UPLOAD_DIR = Path("data/uploads/reviews").resolve()
+REVIEW_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_PRODUCT_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024
 CAPTCHA_EXEMPT = {"/api/health", "/api/auth", "/api/captcha/config", "/api/captcha/status", "/api/captcha/verify"}
@@ -687,32 +689,58 @@ async def top_referrers(user: dict = Depends(current_user)):
 
 
 @app.post("/api/review")
-async def add_review(data: ReviewInput, user: dict = Depends(current_user)):
+async def add_review(
+    order_id: int = Form(..., gt=0),
+    rating: int = Form(..., ge=1, le=5),
+    text: str = Form(..., min_length=3, max_length=2048),
+    photo: UploadFile | None = File(default=None),
+    user: dict = Depends(current_user),
+):
     uid = user["id"]
+    review_text = text.strip()
+    if len(review_text) < 3:
+        raise HTTPException(422, "Напиши отзыв хотя бы в 3 символа.")
+    saved_path: Path | None = None
     async with SessionLocal() as session:
-        order = await session.get(Order, data.order_id)
+        order = await session.get(Order, order_id)
         if not order or order.user_id != uid or order.status != "completed":
             raise HTTPException(400, "Отзыв можно оставить только к своему подтверждённому заказу.")
-        exists = (await session.execute(select(Review.id).where(Review.order_id == data.order_id))).first()
+        exists = (await session.execute(select(Review.id).where(Review.order_id == order_id))).first()
         if exists:
             raise HTTPException(409, "Для этого заказа отзыв уже оставлен.")
         account = await session.get(User, uid)
         username = account.username if account else user.get("username")
-        review = Review(user_id=uid, order_id=data.order_id, rating=data.rating, text=data.text.strip(), has_photo=False, status="pending")
-        session.add(review)
-        await session.commit()
-        await session.refresh(review)
-        review_id = review.id
+        photo_url = None
+        try:
+            if photo and photo.filename:
+                if photo.content_type not in ALLOWED_PRODUCT_IMAGE_TYPES:
+                    raise HTTPException(415, "Поддерживаются только JPG, PNG и WEBP.")
+                content = await photo.read(MAX_PRODUCT_IMAGE_SIZE + 1)
+                if not content or len(content) > MAX_PRODUCT_IMAGE_SIZE:
+                    raise HTTPException(413, "Размер фотографии — не более 5 МБ.")
+                try:
+                    optimized = await asyncio.to_thread(optimize_product_image, content)
+                except ValueError as exc:
+                    raise HTTPException(415, str(exc)) from exc
+                filename = f"{secrets.token_hex(12)}.webp"
+                saved_path = REVIEW_UPLOAD_DIR / filename
+                saved_path.write_bytes(optimized)
+                photo_url = f"/uploads/reviews/{filename}"
+            review = Review(user_id=uid, order_id=order_id, rating=rating, text=review_text,
+                            photo_id=photo_url, has_photo=bool(photo_url), status="pending")
+            session.add(review)
+            await session.commit()
+            await session.refresh(review)
+            review_id = review.id
+        except Exception:
+            if saved_path:
+                saved_path.unlink(missing_ok=True)
+            raise
     notified = await bot.send_review_moderation(
-        review_id=review_id,
-        order_id=data.order_id,
-        username=username,
-        user_id=uid,
-        rating=data.rating,
-        review_text=data.text.strip(),
+        review_id=review_id, order_id=order_id, username=username, user_id=uid,
+        rating=rating, review_text=review_text, photo_path=str(saved_path) if saved_path else None,
     )
     return {"ok": True, "status": "pending", "notified_admin": notified}
-
 
 async def _create_promo(session, owner_id: int, kind: str, amount: float, max_uses: int = 1, created_by: str = "ref") -> str:
     for _ in range(20):
@@ -1187,7 +1215,18 @@ async def admin_broadcast(data: BroadcastInput, tasks: BackgroundTasks, user: di
 async def admin_reviews(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(Review).order_by(Review.published_at.desc()).limit(100))).scalars().all()
-        return [{"id": r.id, "order_id": r.order_id, "user_id": r.user_id, "rating": r.rating, "text": r.text or "", "status": r.status or "pending", "published_at": r.published_at.isoformat() if r.published_at else ""} for r in rows]
+        return [{"id": r.id, "order_id": r.order_id, "user_id": r.user_id, "rating": r.rating, "text": r.text or "", "photo_url": r.photo_id if r.has_photo else None, "status": r.status or "pending", "published_at": r.published_at.isoformat() if r.published_at else ""} for r in rows]
+
+
+@app.get("/uploads/reviews/{filename}")
+async def review_image(filename: str):
+    safe_name = Path(filename).name
+    if safe_name != filename or not re.fullmatch(r"[a-f0-9]{24}\\.webp", safe_name):
+        raise HTTPException(404, "Фотография не найдена.")
+    target = REVIEW_UPLOAD_DIR / safe_name
+    if not target.is_file():
+        raise HTTPException(404, "Фотография не найдена.")
+    return FileResponse(target, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @app.get("/")
