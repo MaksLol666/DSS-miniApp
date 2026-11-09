@@ -658,7 +658,7 @@ async def profile(user: dict = Depends(current_user)):
         spent = (await session.execute(select(func.count(Order.id)).where(Order.user_id == uid, Order.status == "completed"))).scalar() or 0
         promos = (await session.execute(select(func.count(Promocode.code)).where(Promocode.owner_id == uid, Promocode.used.is_(False), Promocode.used_count < Promocode.max_uses))).scalar() or 0
     ref_link = f"https://t.me/{bot.BOT_USERNAME}?start=ref_{uid}" if bot.BOT_USERNAME else ""
-    return {"user_id": uid, "username": record.username if record else user.get("username"), "first_name": user.get("first_name") or "", "last_name": user.get("last_name") or "", "photo_url": user.get("photo_url") or "",
+    return {"user_id": uid, "username": record.username if record else user.get("username"), "telegram_username": user.get("username") or "", "first_name": user.get("first_name") or "", "last_name": user.get("last_name") or "", "photo_url": user.get("photo_url") or "",
         "balance": float(record.balance or 0) if record else 0, "orders_count": int(spent),
         "referrals_count": int(record.referrals_count or 0) if record else 0,
         "next_bonus_at": int(record.next_bonus_at or REFERRAL_MILESTONE) if record else REFERRAL_MILESTONE,
@@ -1104,13 +1104,13 @@ async def admin_stats(period: str = "30d", user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         total_users = (await session.execute(select(func.count(User.id)))).scalar() or 0
         pending = (await session.execute(select(func.count(Order.id)).where(Order.status.in_(("accepted", "assembling", "assembled", "in_transit"))))).scalar() or 0
-        order_query = select(Order).where(Order.status == "approved")
+        order_query = select(Order).where(Order.status == "completed")
         if start is not None: order_query = order_query.where(Order.created_at >= start)
         if end is not None: order_query = order_query.where(Order.created_at < end)
         orders_rows = (await session.execute(order_query.order_by(Order.created_at.desc()))).scalars().all()
         order_count = len(orders_rows)
         revenue = sum(max(0.0, float(o.total) - (DELIVERY_PRICE if o.delivery_type == "cdek" else 0.0)) for o in orders_rows)
-        item_query = select(OrderItem, Order).join(Order, Order.id == OrderItem.order_id).where(Order.status == "approved")
+        item_query = select(OrderItem, Order).join(Order, Order.id == OrderItem.order_id).where(Order.status == "completed")
         if start is not None: item_query = item_query.where(Order.created_at >= start)
         if end is not None: item_query = item_query.where(Order.created_at < end)
         item_rows = (await session.execute(item_query)).all()
@@ -1138,8 +1138,8 @@ async def admin_stats(period: str = "30d", user: dict = Depends(admin_user)):
         top_profit_products = sorted(({"brand": p["brand"], "flavor": p["flavor"], "profit": round(p["revenue"] - p["cost"], 2), "cost_tracked": p["cost_tracked"]} for p in products.values()), key=lambda x: x["profit"], reverse=True)[:5]
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = now - timedelta(days=7)
-        day_orders = (await session.execute(select(Order).where(Order.status == "approved", Order.created_at >= day_start))).scalars().all()
-        week_orders = (await session.execute(select(Order).where(Order.status == "approved", Order.created_at >= week_start))).scalars().all()
+        day_orders = (await session.execute(select(Order).where(Order.status == "completed", Order.created_at >= day_start))).scalars().all()
+        week_orders = (await session.execute(select(Order).where(Order.status == "completed", Order.created_at >= week_start))).scalars().all()
         revenue_day = sum(max(0.0, float(o.total) - (DELIVERY_PRICE if o.delivery_type == "cdek" else 0.0)) for o in day_orders)
         revenue_week = sum(max(0.0, float(o.total) - (DELIVERY_PRICE if o.delivery_type == "cdek" else 0.0)) for o in week_orders)
     return {
