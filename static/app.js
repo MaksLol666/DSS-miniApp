@@ -387,7 +387,8 @@ async function loadAdminTab(tab) {
   if (tab === 'stats') state.adminStats = await api('/api/admin/stats?period=' + encodeURIComponent(state.statsPeriod || '30d'));
 }
 async function loadPage(page) {
-  if (page === 'orders') state.orders = await api('/api/orders');\n  if (page === 'favorites') state.favorites = await api('/api/favorites');
+  if (page === 'orders') state.orders = await api('/api/orders');
+  if (page === 'favorites') state.favorites = await api('/api/favorites');
   if (page === 'profile') state.profile = await api('/api/profile');
   if (page === 'promos') state.promos = await api('/api/promos');
   if (page === 'leaders') {
@@ -425,7 +426,8 @@ async function action(button) {
   if (name === 'favorite-toggle') {
     try { await api('/api/favorites/toggle', { method: 'POST', body: JSON.stringify({ product_id: id }) }); state.favorites = await api('/api/favorites'); render(); toast(state.favorites.some(p => p.id === id) ? 'Добавлено в избранное' : 'Убрано из избранного'); } catch (error) { toast(error.message); } return;
   }
-  if (name === 'reload-favorites') { try { state.favorites = await api('/api/favorites'); render(); } catch (error) { toast(error.message); } return; }\n  if (name === 'add-cart') {
+  if (name === 'reload-favorites') { try { state.favorites = await api('/api/favorites'); render(); } catch (error) { toast(error.message); } return; }
+  if (name === 'add-cart') {
     try { state.cart = await api('/api/cart/add', { method: 'POST', body: JSON.stringify({ product_id: id }) }); state.products = await api('/api/products'); haptic('light'); render(); toast('Добавлено в корзину'); }
     catch (error) { toast(error.message); } return;
   }
@@ -500,7 +502,9 @@ async function action(button) {
     catch (error) { toast(error.message); } return;
   }
   if (name === 'change-order-status') {
-    const nextStatus = button.dataset.status;\n    if (!confirm('Изменить статус заказа №' + id + ' на «' + statusInfo(nextStatus)[1] + '»?')) return;\n    try { await api('/api/admin/orders/' + id + '/status', { method: 'POST', body: JSON.stringify({ status: nextStatus }) }); await loadAdminTab('orders'); render(); toast('Статус заказа обновлён'); } catch (error) { toast(error.message); } return;
+    const nextStatus = button.dataset.status;
+    if (!confirm('Изменить статус заказа №' + id + ' на «' + statusInfo(nextStatus)[1] + '»?')) return;
+    try { await api('/api/admin/orders/' + id + '/status', { method: 'POST', body: JSON.stringify({ status: nextStatus }) }); await loadAdminTab('orders'); render(); toast('Статус заказа обновлён'); } catch (error) { toast(error.message); } return;
   }
   if (name === 'approve-order' || name === 'reject-order') {
     const accept = name === 'approve-order';
