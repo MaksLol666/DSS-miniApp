@@ -1221,7 +1221,7 @@ async def admin_reviews(user: dict = Depends(admin_user)):
 @app.get("/uploads/reviews/{filename}")
 async def review_image(filename: str):
     safe_name = Path(filename).name
-    if safe_name != filename or not re.fullmatch(r"[a-f0-9]{24}\\.webp", safe_name):
+    if safe_name != filename or not re.fullmatch(r"[a-f0-9]{24}\.webp", safe_name):
         raise HTTPException(404, "Фотография не найдена.")
     target = REVIEW_UPLOAD_DIR / safe_name
     if not target.is_file():
