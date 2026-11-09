@@ -794,9 +794,17 @@ async def _process_order(order_id: int, approve: bool) -> dict:
 
 @app.get("/api/admin/products")
 async def admin_products(user: dict = Depends(admin_user)):
+    active_statuses = ("accepted", "assembling", "assembled", "in_transit")
     async with SessionLocal() as session:
         rows = (await session.execute(select(Product).order_by(Product.category_id, Product.number, Product.id))).scalars().all()
-        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0), "images": p.images} for p in rows]
+        reserved_rows = (await session.execute(
+            select(OrderItem.product_id, func.sum(OrderItem.quantity))
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(Order.status.in_(active_statuses))
+            .group_by(OrderItem.product_id)
+        )).all()
+        reserved = {int(product_id): int(quantity or 0) for product_id, quantity in reserved_rows}
+        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0), "reserved_qty": reserved.get(p.id, 0), "images": p.images} for p in rows]
 
 
 @app.post("/api/admin/products")
