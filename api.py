@@ -26,7 +26,7 @@ from config import (
     REFERRAL_BONUS_PERCENT, REFERRAL_MILESTONE, REFERRAL_MILESTONE_DISCOUNT,
 )
 from database.db import SessionLocal, engine, init_db
-from database.models import CartItem, CartPromo, Category, Order, OrderItem, Product, Promocode, Review, User
+from database.models import CartItem, CartPromo, Category, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User
 from image_utils import optimize_product_image
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -168,6 +168,14 @@ class PromoInput(BaseModel):
     min_order: float = Field(default=0, ge=0, le=10000000)
     starts_at: str | None = None
     expires_at: str | None = None
+
+
+class FavoriteInput(ProductId):
+    pass
+
+
+class OrderStatusInput(BaseModel):
+    status: str = Field(min_length=1, max_length=24)
 
 
 class CheckoutInput(BaseModel):
@@ -434,6 +442,36 @@ async def products(category_id: int | None = None, user: dict = Depends(current_
         return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0), "images": p.images} for p in rows]
 
 
+@app.get("/api/favorites")
+async def favorites(user: dict = Depends(current_user)):
+    async with SessionLocal() as session:
+        rows = (await session.execute(
+            select(Product).join(Favorite, Favorite.product_id == Product.id)
+            .where(Favorite.user_id == user["id"]).order_by(Favorite.created_at.desc())
+        )).scalars().all()
+        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand,
+                 "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock),
+                 "stock_qty": int(p.stock_qty or 0), "images": p.images} for p in rows]
+
+
+@app.post("/api/favorites/toggle")
+async def toggle_favorite(data: FavoriteInput, user: dict = Depends(current_user)):
+    async with SessionLocal() as session:
+        if not await session.get(Product, data.product_id):
+            raise HTTPException(404, "Товар не найден.")
+        existing = (await session.execute(select(Favorite).where(
+            Favorite.user_id == user["id"], Favorite.product_id == data.product_id
+        ))).scalar_one_or_none()
+        if existing:
+            await session.delete(existing)
+            is_favorite = False
+        else:
+            session.add(Favorite(user_id=user["id"], product_id=data.product_id))
+            is_favorite = True
+        await session.commit()
+    return {"product_id": data.product_id, "is_favorite": is_favorite}
+
+
 @app.get("/api/cart")
 async def get_cart(user: dict = Depends(current_user)):
     return await _cart(user["id"])
@@ -562,12 +600,13 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         totals = _totals(items, promos)
         delivery_price = DELIVERY_PRICE if data.delivery_type == "cdek" else 0
         final = round(totals["total"] + delivery_price, 2)
-        order = Order(user_id=user["id"], total=final, status="pending", promo_codes=",".join(codes) if codes else None,
+        order = Order(user_id=user["id"], total=final, status="accepted", promo_codes=",".join(codes) if codes else None,
             delivery_type=data.delivery_type, delivery_name=data.delivery_name.strip() if data.delivery_name else None,
             delivery_phone=data.delivery_phone.strip() if data.delivery_phone else None,
             delivery_address=data.delivery_address.strip() if data.delivery_address else None)
         session.add(order)
         await session.flush()
+        session.add(OrderStatusHistory(order_id=order.id, status="accepted", changed_by=user["id"], note="Заказ оформлен"))
         for cart_item, p in rows:
             quantity = int(cart_item.quantity or 1)
             session.add(OrderItem(order_id=order.id, product_id=p.id, price=float(p.price), quantity=quantity,
@@ -583,9 +622,9 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         username = record.username if record else user.get("username")
     item_text = "\n".join(f"• {item['brand']} — {item['flavor']} × {item['quantity']} — {int(item['price'])} ₽/шт." for item in items)
     receive = "Самовывоз" if data.delivery_type == "pickup" else f"СДЭК: {data.delivery_name}, {data.delivery_phone}, {data.delivery_address} (+{DELIVERY_PRICE} ₽)"
-    notice = f"🆕 Новый заказ №{order.id}\nПользователь: {username or user['id']} (ID {user['id']})\n\n{item_text}\n\nСумма товаров: {int(totals['subtotal'])} ₽\nСкидка: {totals['percent_discount']}% и {int(totals['fixed_discount'])} ₽\nПолучение: {receive}\nПромокоды: {', '.join(codes) if codes else 'нет'}\nК оплате: {int(final)} ₽\n\nОткрой /admin в боте, чтобы обработать заказ."
+    notice = f"🆕 Новый заказ DSS-{order.id:06d}\nПользователь: {username or user['id']} (ID {user['id']})\n\n{item_text}\n\nСумма товаров: {int(totals['subtotal'])} ₽\nСкидка: {totals['percent_discount']}% и {int(totals['fixed_discount'])} ₽\nПолучение: {receive}\nПромокоды: {', '.join(codes) if codes else 'нет'}\nК оплате: {int(final)} ₽\n\nОткрой /admin в боте, чтобы обработать заказ."
     await bot.notify_admin(notice, order.id)
-    return {"id": order.id, "total": float(order.total), "status": order.status, "delivery_type": order.delivery_type,
+    return {"id": order.id, "order_number": f"DSS-{order.id:06d}", "total": float(order.total), "status": order.status, "delivery_type": order.delivery_type,
         "delivery_name": order.delivery_name, "delivery_phone": order.delivery_phone, "delivery_address": order.delivery_address,
         "created_at": order.created_at.isoformat() if order.created_at else "", "items": items, "delivery_price": delivery_price}
 
@@ -602,9 +641,11 @@ async def orders(user: dict = Depends(current_user)):
         reviewed = set((await session.execute(select(Review.order_id).where(Review.user_id == user["id"]))).scalars().all())
         result = []
         for o in rows:
-            result.append({"id": o.id, "total": float(o.total), "status": o.status, "delivery_type": o.delivery_type,
+            history = (await session.execute(select(OrderStatusHistory).where(OrderStatusHistory.order_id == o.id).order_by(OrderStatusHistory.created_at, OrderStatusHistory.id))).scalars().all()
+            result.append({"id": o.id, "order_number": f"DSS-{o.id:06d}", "total": float(o.total), "status": o.status, "delivery_type": o.delivery_type,
                 "delivery_name": o.delivery_name, "delivery_phone": o.delivery_phone, "delivery_address": o.delivery_address,
                 "created_at": o.created_at.isoformat() if o.created_at else "", "items": await _order_items(session, o.id),
+                "status_history": [{"status": h.status, "changed_at": h.created_at.isoformat() if h.created_at else "", "note": h.note or ""} for h in history],
                 "has_review": o.id in reviewed})
         return result
 
@@ -614,10 +655,10 @@ async def profile(user: dict = Depends(current_user)):
     uid = user["id"]
     async with SessionLocal() as session:
         record = await session.get(User, uid)
-        spent = (await session.execute(select(func.count(Order.id)).where(Order.user_id == uid, Order.status == "approved"))).scalar() or 0
+        spent = (await session.execute(select(func.count(Order.id)).where(Order.user_id == uid, Order.status == "completed"))).scalar() or 0
         promos = (await session.execute(select(func.count(Promocode.code)).where(Promocode.owner_id == uid, Promocode.used.is_(False), Promocode.used_count < Promocode.max_uses))).scalar() or 0
     ref_link = f"https://t.me/{bot.BOT_USERNAME}?start=ref_{uid}" if bot.BOT_USERNAME else ""
-    return {"user_id": uid, "username": record.username if record else user.get("username"),
+    return {"user_id": uid, "username": record.username if record else user.get("username"), "first_name": user.get("first_name") or "", "last_name": user.get("last_name") or "", "photo_url": user.get("photo_url") or "",
         "balance": float(record.balance or 0) if record else 0, "orders_count": int(spent),
         "referrals_count": int(record.referrals_count or 0) if record else 0,
         "next_bonus_at": int(record.next_bonus_at or REFERRAL_MILESTONE) if record else REFERRAL_MILESTONE,
@@ -650,7 +691,7 @@ async def add_review(data: ReviewInput, user: dict = Depends(current_user)):
     uid = user["id"]
     async with SessionLocal() as session:
         order = await session.get(Order, data.order_id)
-        if not order or order.user_id != uid or order.status != "approved":
+        if not order or order.user_id != uid or order.status != "completed":
             raise HTTPException(400, "Отзыв можно оставить только к своему подтверждённому заказу.")
         exists = (await session.execute(select(Review.id).where(Review.order_id == data.order_id))).first()
         if exists:
@@ -683,18 +724,37 @@ async def _create_promo(session, owner_id: int, kind: str, amount: float, max_us
     raise RuntimeError("Не удалось сгенерировать уникальный промокод.")
 
 
-async def _process_order(order_id: int, approve: bool) -> dict:
-    notifications = []
+ORDER_STATUS_LABELS = {"accepted": "Принят", "assembling": "В сборке", "assembled": "Собран", "in_transit": "В пути", "completed": "Выполнен", "rejected": "Отклонён"}
+
+
+async def _set_order_status(order_id: int, new_status: str, actor_id: int | None = None) -> dict:
+    if new_status not in ORDER_STATUS_LABELS:
+        raise HTTPException(400, "Неизвестный статус заказа.")
+    notifications: list[tuple[int, str]] = []
     async with SessionLocal() as session:
         order = await session.get(Order, order_id)
         if not order:
             raise HTTPException(404, "Заказ не найден.")
-        if order.status != "pending":
-            raise HTTPException(409, "Этот заказ уже обработан.")
+        current = order.status or "accepted"
+        if current in ("completed", "rejected"):
+            raise HTTPException(409, "Заказ уже завершён.")
+        allowed = {"accepted": {"assembling", "rejected"}, "assembling": {"assembled", "rejected"},
+                   "assembled": {"in_transit", "completed", "rejected"}, "in_transit": {"completed"}}
+        if new_status not in allowed.get(current, set()):
+            raise HTTPException(409, f"Нельзя изменить статус «{ORDER_STATUS_LABELS.get(current, current)}» на «{ORDER_STATUS_LABELS[new_status]}».")
+        if new_status == "in_transit" and order.delivery_type != "cdek":
+            raise HTTPException(400, "Статус «В пути» доступен только для доставки.")
+        if new_status == "completed" and order.delivery_type == "cdek" and current != "in_transit":
+            raise HTTPException(409, "Для доставки сначала установи статус «В пути».")
         items = (await session.execute(select(OrderItem, Product).join(Product, OrderItem.product_id == Product.id).where(OrderItem.order_id == order_id))).all()
         buyer = await session.get(User, order.user_id)
-        if approve:
-            order.status = "approved"
+        order.status = new_status
+        session.add(OrderStatusHistory(order_id=order.id, status=new_status, changed_by=actor_id, note="Изменение статуса заказа"))
+        if new_status == "rejected":
+            for order_item, product in items:
+                product.stock_qty = int(product.stock_qty or 0) + int(order_item.quantity or 1)
+                product.in_stock = product.stock_qty > 0
+        if new_status == "completed":
             if buyer:
                 buyer.balance = float(buyer.balance or 0) + float(order.total)
                 if buyer.referrer_id and not buyer.first_purchase_done:
@@ -709,7 +769,7 @@ async def _process_order(order_id: int, approve: bool) -> dict:
                         if referrer.referrals_count >= next_at:
                             milestone_code = await _create_promo(session, ref_id, "percent", REFERRAL_MILESTONE_DISCOUNT)
                             referrer.next_bonus_at = next_at + REFERRAL_MILESTONE
-                        notifications.append((ref_id, f"🎁 Твой приглашённый совершил первую покупку. Промокод на {int(bonus)} ₽: {bonus_code}"))
+                        notifications.append((ref_id, f"🎁 Твой приглашённый завершил первую покупку. Промокод на {int(bonus)} ₽: {bonus_code}"))
                         if milestone_code:
                             notifications.append((ref_id, f"🏆 Уже {referrer.referrals_count} купивших рефералов! Промокод на −{REFERRAL_MILESTONE_DISCOUNT}%: {milestone_code}"))
                 buyer.first_purchase_done = True
@@ -719,20 +779,17 @@ async def _process_order(order_id: int, approve: bool) -> dict:
                     if promo and promo.used_count < promo.max_uses:
                         promo.used_count += 1
                         promo.used = promo.used_count >= promo.max_uses
-            if buyer:
-                notifications.append((buyer.id, f"✅ Заказ №{order_id} подтверждён! Спасибо за покупку."))
-        else:
-            order.status = "rejected"
-            for order_item, product in items:
-                product.stock_qty = int(product.stock_qty or 0) + int(order_item.quantity or 1)
-                product.in_stock = product.stock_qty > 0
-            if buyer:
-                notifications.append((buyer.id, f"❌ Заказ №{order_id} отклонён администратором."))
+        if buyer:
+            msg = f"❌ Заказ DSS-{order_id:06d} отклонён. Зарезервированный товар возвращён на склад." if new_status == "rejected" else f"📦 Заказ DSS-{order_id:06d}: статус изменён — {ORDER_STATUS_LABELS[new_status]}."
+            notifications.append((buyer.id, msg))
         await session.commit()
-        status = order.status
     for user_id, message in notifications:
         await bot.send_message_safe(user_id, message)
-    return {"status": status, "order_id": order_id}
+    return {"status": new_status, "order_id": order_id, "order_number": f"DSS-{order_id:06d}"}
+
+
+async def _process_order(order_id: int, approve: bool) -> dict:
+    return await _set_order_status(order_id, "assembling" if approve else "rejected", ADMIN_ID)
 
 
 @app.get("/api/admin/products")
@@ -865,7 +922,7 @@ async def admin_product_delete(product_id: int, user: dict = Depends(admin_user)
 
 @app.get("/api/admin/orders")
 async def admin_orders(status: str | None = None, user: dict = Depends(admin_user)):
-    if status and status not in ("pending", "approved", "rejected"):
+    if status and status not in ("accepted", "assembling", "assembled", "in_transit", "completed", "rejected"):
         raise HTTPException(400, "Неизвестный статус заказа.")
     async with SessionLocal() as session:
         query = select(Order).order_by(Order.created_at.desc()).limit(150)
@@ -875,7 +932,8 @@ async def admin_orders(status: str | None = None, user: dict = Depends(admin_use
         result = []
         for o in rows:
             buyer = await session.get(User, o.user_id)
-            result.append({"id": o.id, "user_id": o.user_id, "username": buyer.username if buyer else None, "total": float(o.total), "status": o.status,
+            history = (await session.execute(select(OrderStatusHistory).where(OrderStatusHistory.order_id == o.id).order_by(OrderStatusHistory.created_at, OrderStatusHistory.id))).scalars().all()
+            result.append({"id": o.id, "order_number": f"DSS-{o.id:06d}", "user_id": o.user_id, "username": buyer.username if buyer else None, "total": float(o.total), "status": o.status, "status_history": [{"status": h.status, "changed_at": h.created_at.isoformat() if h.created_at else "", "note": h.note or ""} for h in history],
                 "delivery_type": o.delivery_type, "delivery_name": o.delivery_name, "delivery_phone": o.delivery_phone, "delivery_address": o.delivery_address,
                 "promo_codes": o.promo_codes, "created_at": o.created_at.isoformat() if o.created_at else "", "items": [
                     {"product_id": item.product_id, "brand": item.brand_snapshot or product.brand, "flavor": item.flavor_snapshot or product.flavor,
@@ -884,6 +942,11 @@ async def admin_orders(status: str | None = None, user: dict = Depends(admin_use
                     for item, product in (await session.execute(select(OrderItem, Product).join(Product, OrderItem.product_id == Product.id).where(OrderItem.order_id == o.id).order_by(OrderItem.id))).all()
                 ]})
         return result
+
+
+@app.post("/api/admin/orders/{order_id}/status")
+async def admin_order_status(order_id: int, data: OrderStatusInput, user: dict = Depends(admin_user)):
+    return await _set_order_status(order_id, data.status, user["id"])
 
 
 @app.post("/api/admin/orders/{order_id}/approve")
@@ -911,7 +974,7 @@ async def admin_users(q: str | None = None, user: dict = Depends(admin_user)):
         rows = (await session.execute(query)).scalars().all()
         result = []
         for u in rows:
-            count = (await session.execute(select(func.count(Order.id)).where(Order.user_id == u.id, Order.status == "approved"))).scalar() or 0
+            count = (await session.execute(select(func.count(Order.id)).where(Order.user_id == u.id, Order.status == "completed"))).scalar() or 0
             promos = (await session.execute(select(func.count(Promocode.code)).where(Promocode.owner_id == u.id, Promocode.used.is_(False), Promocode.used_count < Promocode.max_uses))).scalar() or 0
             result.append({"id": u.id, "username": u.username, "balance": float(u.balance or 0), "orders_count": int(count), "referrals_count": int(u.referrals_count or 0), "active_promos": int(promos), "is_banned": bool(u.is_banned)})
         return result
@@ -1012,7 +1075,7 @@ async def admin_promo_delete(code: str, user: dict = Depends(admin_user)):
         promo = await session.get(Promocode, code)
         if not promo:
             raise HTTPException(404, "Промокод не найден.")
-        pending = (await session.execute(select(Order.id).where(Order.status == "pending", Order.promo_codes.contains(code)).limit(1))).first()
+        pending = (await session.execute(select(Order.id).where(Order.status.in_(("accepted", "assembling", "assembled", "in_transit")), Order.promo_codes.contains(code)).limit(1))).first()
         if pending:
             raise HTTPException(409, "Промокод привязан к ожидающему заказу.")
         await session.execute(delete(CartPromo).where(CartPromo.code == code))
@@ -1040,7 +1103,7 @@ async def admin_stats(period: str = "30d", user: dict = Depends(admin_user)):
         start, end = None, None
     async with SessionLocal() as session:
         total_users = (await session.execute(select(func.count(User.id)))).scalar() or 0
-        pending = (await session.execute(select(func.count(Order.id)).where(Order.status == "pending"))).scalar() or 0
+        pending = (await session.execute(select(func.count(Order.id)).where(Order.status.in_(("accepted", "assembling", "assembled", "in_transit"))))).scalar() or 0
         order_query = select(Order).where(Order.status == "approved")
         if start is not None: order_query = order_query.where(Order.created_at >= start)
         if end is not None: order_query = order_query.where(Order.created_at < end)
