@@ -67,7 +67,7 @@ async def notify_admin(text: str, order_id: int | None = None) -> bool:
     keyboard = None
     if order_id:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="✅ Принять", callback_data=f"order:approve:{order_id}"),
+            InlineKeyboardButton(text="📦 Начать сборку", callback_data=f"order:approve:{order_id}"),
             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"order:reject:{order_id}"),
         ], [InlineKeyboardButton(text="🛍 Открыть админку", web_app=WebAppInfo(url=MINIAPP_URL))]])
     try:
@@ -99,7 +99,7 @@ async def send_review_moderation(review_id: int, order_id: int, username: str | 
     buyer = f"@{username}" if username and not username.isdigit() else f"ID {user_id}"
     text = (
         f"📝 НОВЫЙ ОТЗЫВ — ОЖИДАЕТ МОДЕРАЦИИ\n\n"
-        f"Заказ: №{order_id}\nПокупатель: {buyer}\n"
+        f"Заказ: DSS-{order_id:06d}\nПокупатель: {buyer}\n"
         f"Оценка: {'★' * rating}{'☆' * (5-rating)}\n\n"
         f"{review_text}"
     )
