@@ -8,7 +8,7 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.exceptions import TelegramForbiddenError, TelegramNetworkError, TelegramServerError
 from aiogram.filters import Command, CommandStart
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo, CallbackQuery
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo, CallbackQuery, FSInputFile
 
 from sqlalchemy import delete, func, select
 
@@ -78,7 +78,7 @@ async def notify_admin(text: str, order_id: int | None = None) -> bool:
         return False
 
 
-async def publish_review(text: str) -> bool:
+async def publish_review(text: str, photo_path: str | None = None) -> bool:
     if _bot is None or not REVIEWS_CHANNEL_ID:
         return False
     try:
@@ -86,14 +86,19 @@ async def publish_review(text: str) -> bool:
             target: int | str = int(REVIEWS_CHANNEL_ID)
         except ValueError:
             target = REVIEWS_CHANNEL_ID
-        await _bot.send_message(target, text, disable_web_page_preview=True)
+        if photo_path and Path(photo_path).is_file():
+            await _bot.send_photo(target, FSInputFile(photo_path), caption=text[:1024])
+            if len(text) > 1024:
+                await _bot.send_message(target, text[1024:], disable_web_page_preview=True)
+        else:
+            await _bot.send_message(target, text, disable_web_page_preview=True)
         return True
     except Exception:
         log.exception("Не удалось опубликовать отзыв в канал")
         return False
 
 
-async def send_review_moderation(review_id: int, order_id: int, username: str | None, user_id: int, rating: int, review_text: str) -> bool:
+async def send_review_moderation(review_id: int, order_id: int, username: str | None, user_id: int, rating: int, review_text: str, photo_path: str | None = None) -> bool:
     if _bot is None or not ADMIN_ID:
         return False
     buyer = f"@{username}" if username and not username.isdigit() else f"ID {user_id}"
@@ -108,7 +113,10 @@ async def send_review_moderation(review_id: int, order_id: int, username: str | 
         InlineKeyboardButton(text="❌ Отклонить", callback_data=f"review:reject:{review_id}"),
     ]])
     try:
-        await _bot.send_message(ADMIN_ID, text, reply_markup=keyboard, disable_web_page_preview=True)
+        if photo_path and Path(photo_path).is_file():
+            await _bot.send_photo(ADMIN_ID, FSInputFile(photo_path), caption=text[:1024], reply_markup=keyboard)
+        else:
+            await _bot.send_message(ADMIN_ID, text, reply_markup=keyboard, disable_web_page_preview=True)
         return True
     except Exception:
         log.exception("Не удалось отправить отзыв администратору на модерацию")
@@ -498,13 +506,15 @@ def _register_handlers(dp: Dispatcher) -> None:
                 buyer = await session.get(User, review.user_id)
                 username = buyer.username if buyer else None
                 order_id, rating, review_text = review.order_id, review.rating, review.text or ""
+                photo_path = str(Path("data/uploads/reviews") / Path(review.photo_id).name) if review.has_photo and review.photo_id else None
             published = await publish_review(
                 f"💨 DEAD SMOKE STORE | ОТЗЫВЫ ПОКУПАТЕЛЕЙ\n\n"
                 f"⭐ Оценка: {'★' * rating}{'☆' * (5-rating)}\n"
                 f"🛍 Покупка подтверждена · заказ №{order_id}\n"
                 f"👤 Покупатель: {('@' + username) if username and not username.isdigit() else 'Покупатель DSS'}\n\n"
                 f"«{review_text}»\n\n"
-                f"DEAD SMOKE STORE"
+                f"DEAD SMOKE STORE",
+                photo_path=photo_path,
             )
             if not published:
                 await callback.answer("Не удалось опубликовать. Проверь права бота и ID канала.", show_alert=True)
