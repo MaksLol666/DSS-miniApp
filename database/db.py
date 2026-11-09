@@ -53,6 +53,12 @@ async def init_db() -> None:
             for column, sql_type in promo_migrations:
                 if column not in promo_columns:
                     await connection.exec_driver_sql(f"ALTER TABLE promocodes ADD COLUMN {column} {sql_type}")
+            result = await connection.exec_driver_sql("PRAGMA table_info(orders)")
+            order_columns = {row[1] for row in result.fetchall()}
+            if "status" in order_columns:
+                await connection.exec_driver_sql("UPDATE orders SET status = 'accepted' WHERE status = 'pending'")
+                await connection.exec_driver_sql("UPDATE orders SET status = 'completed' WHERE status = 'approved'")
+
             result = await connection.exec_driver_sql("PRAGMA table_info(reviews)")
             review_columns = {row[1] for row in result.fetchall()}
             if "status" not in review_columns:
