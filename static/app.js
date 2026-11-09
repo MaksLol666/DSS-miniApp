@@ -274,7 +274,8 @@ function renderOrders() {
         if (state.reviewOrder === o.id) review = '<form id="review-form" data-order-id="' + o.id + '"><label class="field-label">Оценка</label><select class="field" name="rating"><option value="5">5 — Отлично</option><option value="4">4 — Хорошо</option><option value="3">3 — Нормально</option><option value="2">2 — Плохо</option><option value="1">1 — Очень плохо</option></select><label class="field-label">Отзыв</label><textarea class="field" name="text" required minlength="3" maxlength="2048" placeholder="Расскажи о покупке"></textarea><button class="primary" type="submit" style="margin-top:10px">Отправить отзыв</button></form>';
         else review = '<button class="secondary" data-action="write-review" data-id="' + o.id + '" style="width:100%;margin-top:10px">Оставить отзыв</button>';
       } else if (o.has_review) review = '<div class="item-sub">Спасибо за отзыв 💚</div>';
-      const history = (o.status_history || []).map(h => '<div class="item-sub">✓ ' + esc(statusInfo(h.status)[1]) + ' · ' + dateText(h.changed_at) + '</div>').join('');\n      return '<article class="list-card"><div class="row"><b>' + esc(o.order_number || ('DSS-' + String(o.id).padStart(6, '0'))) + '</b><span class="status ' + st[0] + '">' + st[1] + '</span></div><div class="item-sub" style="margin:6px 0 11px">' + dateText(o.created_at) + ' · ' + (o.delivery_type === 'cdek' ? 'Доставка' : 'Самовывоз') + '</div>' + items + '<div class="summary-line total"><span>Итого</span><span>' + money(o.total) + '</span></div>' + (history ? '<div class="divider"></div><div class="item-sub">История статусов</div>' + history : '') + review + '</article>';
+      const history = (o.status_history || []).map(h => '<div class="item-sub">✓ ' + esc(statusInfo(h.status)[1]) + ' · ' + dateText(h.changed_at) + '</div>').join('');
+      return '<article class="list-card"><div class="row"><b>' + esc(o.order_number || ('DSS-' + String(o.id).padStart(6, '0'))) + '</b><span class="status ' + st[0] + '">' + st[1] + '</span></div><div class="item-sub" style="margin:6px 0 11px">' + dateText(o.created_at) + ' · ' + (o.delivery_type === 'cdek' ? 'Доставка' : 'Самовывоз') + '</div>' + items + '<div class="summary-line total"><span>Итого</span><span>' + money(o.total) + '</span></div>' + (history ? '<div class="divider"></div><div class="item-sub">История статусов</div>' + history : '') + review + '</article>';
     }).join('');
 }
 function renderProfile() {
@@ -421,7 +422,10 @@ async function action(button) {
     renderProductGallery(product.id);
     return;
   }
-  if (name === 'favorite-toggle') {\n    try { await api('/api/favorites/toggle', { method: 'POST', body: JSON.stringify({ product_id: id }) }); state.favorites = await api('/api/favorites'); render(); toast(state.favorites.some(p => p.id === id) ? 'Добавлено в избранное' : 'Убрано из избранного'); } catch (error) { toast(error.message); } return;\n  }\n  if (name === 'reload-favorites') { try { state.favorites = await api('/api/favorites'); render(); } catch (error) { toast(error.message); } return; }\n  if (name === 'add-cart') {
+  if (name === 'favorite-toggle') {
+    try { await api('/api/favorites/toggle', { method: 'POST', body: JSON.stringify({ product_id: id }) }); state.favorites = await api('/api/favorites'); render(); toast(state.favorites.some(p => p.id === id) ? 'Добавлено в избранное' : 'Убрано из избранного'); } catch (error) { toast(error.message); } return;
+  }
+  if (name === 'reload-favorites') { try { state.favorites = await api('/api/favorites'); render(); } catch (error) { toast(error.message); } return; }\n  if (name === 'add-cart') {
     try { state.cart = await api('/api/cart/add', { method: 'POST', body: JSON.stringify({ product_id: id }) }); state.products = await api('/api/products'); haptic('light'); render(); toast('Добавлено в корзину'); }
     catch (error) { toast(error.message); } return;
   }
@@ -495,7 +499,10 @@ async function action(button) {
     try { await api('/api/admin/products/' + id, { method: 'DELETE' }); await loadAdminTab('products'); render(); toast('Готово'); }
     catch (error) { toast(error.message); } return;
   }
-  if (name === 'change-order-status') {\n    const nextStatus = button.dataset.status;\n    if (!confirm('Изменить статус заказа №' + id + ' на «' + statusInfo(nextStatus)[1] + '»?')) return;\n    try { await api('/api/admin/orders/' + id + '/status', { method: 'POST', body: JSON.stringify({ status: nextStatus }) }); await loadAdminTab('orders'); render(); toast('Статус заказа обновлён'); } catch (error) { toast(error.message); } return;\n  }\n  if (name === 'approve-order' || name === 'reject-order') {
+  if (name === 'change-order-status') {
+    const nextStatus = button.dataset.status;\n    if (!confirm('Изменить статус заказа №' + id + ' на «' + statusInfo(nextStatus)[1] + '»?')) return;\n    try { await api('/api/admin/orders/' + id + '/status', { method: 'POST', body: JSON.stringify({ status: nextStatus }) }); await loadAdminTab('orders'); render(); toast('Статус заказа обновлён'); } catch (error) { toast(error.message); } return;
+  }
+  if (name === 'approve-order' || name === 'reject-order') {
     const accept = name === 'approve-order';
     if (!confirm((accept ? 'Подтвердить' : 'Отклонить') + ' заказ №' + id + '?')) return;
     try { await api('/api/admin/orders/' + id + '/' + (accept ? 'approve' : 'reject'), { method: 'POST' }); await loadAdminTab('orders'); render(); toast(accept ? 'Заказ подтверждён' : 'Заказ отклонён'); }
@@ -564,7 +571,7 @@ document.addEventListener('submit', async event => {
         delivery_phone: delivery === 'cdek' ? String(data.get('delivery_phone') || '').trim() : null,
         delivery_address: delivery === 'cdek' ? String(data.get('delivery_address') || '').trim() : null };
       const order = await api('/api/checkout', { method: 'POST', body: JSON.stringify(payload) });
-      await refreshCart(); await go('orders'); toast('Заказ №' + order.id + ' отправлен на подтверждение');
+      await refreshCart(); await go('orders'); toast((order.order_number || ('№' + order.id)) + ' принят в обработку');
     } else if (form.id === 'review-form') {
       await api('/api/review', { method: 'POST', body: JSON.stringify({ order_id: Number(form.dataset.orderId), rating: Number(data.get('rating')), text: String(data.get('text') || '').trim() }) });
       state.reviewOrder = 0; state.orders = await api('/api/orders'); render(); toast('Спасибо за отзыв!');
