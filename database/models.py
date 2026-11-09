@@ -51,6 +51,15 @@ class Product(Base):
             return []
 
 
+class Favorite(Base):
+    __tablename__ = "favorites"
+    __table_args__ = (UniqueConstraint("user_id", "product_id", name="uq_favorites_user_product"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class CartItem(Base):
     __tablename__ = "cart_items"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -72,6 +81,16 @@ class Order(Base):
     delivery_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     delivery_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     delivery_address: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+class OrderStatusHistory(Base):
+    __tablename__ = "order_status_history"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    status: Mapped[str] = mapped_column(String(24))
+    changed_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class OrderItem(Base):
