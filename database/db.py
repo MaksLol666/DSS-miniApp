@@ -58,6 +58,14 @@ async def init_db() -> None:
             if "status" in order_columns:
                 await connection.exec_driver_sql("UPDATE orders SET status = 'accepted' WHERE status = 'pending'")
                 await connection.exec_driver_sql("UPDATE orders SET status = 'completed' WHERE status = 'approved'")
+                await connection.exec_driver_sql("""
+                    INSERT INTO order_status_history (order_id, status, changed_by, note)
+                    SELECT o.id, o.status, NULL, 'Исторический статус'
+                    FROM orders o
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM order_status_history h WHERE h.order_id = o.id
+                    )
+                """)
 
             result = await connection.exec_driver_sql("PRAGMA table_info(reviews)")
             review_columns = {row[1] for row in result.fetchall()}
