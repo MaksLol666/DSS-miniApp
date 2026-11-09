@@ -5,7 +5,7 @@ const initData = tg && tg.initData ? tg.initData : '';
 const content = document.getElementById('content');
 const state = {
   user: null, page: 'catalog', categories: [], products: [], cart: {items: [], promos: []},
-  profile: null, orders: [], promos: [], top: [], topref: [], search: '', category: 0,
+  profile: null, orders: [], promos: [], favorites: [], top: [], topref: [], search: '', category: 0,
   delivery: 'pickup', reviewOrder: 0, leaderKind: 'buyers', adminTab: 'orders',
   adminProducts: [], adminOrders: [], adminUsers: [], adminPromos: [], adminReviews: [], adminStats: null, adminQuery: '', galleryProductId: 0, galleryIndex: 0
 };
@@ -183,7 +183,7 @@ function render() {
   if (state.user.is_banned) { content.innerHTML = '<div class="empty"><div class="empty-emoji">⛔</div><b>Доступ ограничен</b><p>Администратор заблокировал этот аккаунт.</p></div>'; return; }
   const pages = {
     catalog: renderCatalog, cart: renderCart, checkout: renderCheckout, orders: renderOrders,
-    profile: renderProfile, promos: renderPromos, leaders: renderLeaders, admin: renderAdmin
+    profile: renderProfile, favorites: renderFavorites, promos: renderPromos, leaders: renderLeaders, admin: renderAdmin
   };
   content.innerHTML = (pages[state.page] || renderCatalog)();
   if (state.page === 'catalog') renderProductGrid();
@@ -212,7 +212,8 @@ function renderProductGrid() {
   }
   grid.innerHTML = products.map(p => {
     const inCart = (state.cart.items || []).find(i => i.product_id === p.id);
-    return '<article class="product-card"><div class="product-art">' + (p.images && p.images.length ? '<img src="' + esc(p.images[0]) + '" alt="' + esc(p.brand) + '" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;border-radius:14px">' : '<span class="product-symbol">' + productSymbol(p) + '</span>') + '<span class="product-no">№ ' + esc(p.number) + '</span><span class="stock-dot"></span></div>' +
+    const isFavorite = state.favorites.some(x => x.id === p.id);
+    return '<article class="product-card"><div class="product-art">' + (p.images && p.images.length ? '<img src="' + esc(p.images[0]) + '" alt="' + esc(p.brand) + '" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;border-radius:14px">' : '<span class="product-symbol">' + productSymbol(p) + '</span>') + '<span class="product-no">№ ' + esc(p.number) + '</span><button class="favorite-toggle" data-action="favorite-toggle" data-id="' + p.id + '" aria-label="' + (isFavorite ? 'Убрать из избранного' : 'В избранное') + '">' + (isFavorite ? '♥' : '♡') + '</button><span class="stock-dot"></span></div>' +
       '<div class="product-body"><div class="product-brand">' + esc(p.brand) + '</div><div class="product-flavor">' + esc(p.flavor) + '</div>' + (p.images && p.images.length ? '<button class="mini-link" data-action="view-product" data-id="' + p.id + '" style="margin-top:5px">Фотографии · ' + p.images.length + '</button>' : '') + '<div class="item-sub" style="margin-top:6px">В наличии: ' + Number(p.stock_qty || 0) + ' шт.</div><div class="product-foot"><div class="price">' + money(p.price) + '</div>' +
       (inCart ? '<span class="muted">В корзине: ' + Number(inCart.quantity || 1) + '</span>' : '') +
       '<button class="add-button" data-action="add-cart" data-id="' + p.id + '" aria-label="Добавить в корзину" ' + (inCart && Number(inCart.quantity || 1) >= Number(p.stock_qty || 0) ? 'disabled' : '') + '>+</button></div></div></article>';
@@ -255,9 +256,12 @@ function renderCheckout() {
     '</div><div class="card"><div class="summary-line"><span>Товары</span><b>' + money(cart.total) + '</b></div><div class="summary-line"><span>Доставка</span><b>' + (cdek ? money(500) : 'Бесплатно') + '</b></div><div class="summary-line total"><span>К оплате</span><span>' + money(Number(cart.total) + (cdek ? 500 : 0)) + '</span></div><button class="primary" type="submit" style="margin-top:12px">Подтвердить заказ</button><button class="secondary" type="button" data-action="go" data-page="cart" style="width:100%;margin-top:9px">Вернуться в корзину</button></div></form>';
 }
 function statusInfo(status) {
-  if (status === 'approved') return ['approved', 'Подтверждён'];
-  if (status === 'rejected') return ['rejected', 'Отклонён'];
-  return ['pending', 'Ожидает'];
+  const map = {accepted:['pending','Принят'], assembling:['pending','В сборке'], assembled:['pending','Собран'], in_transit:['pending','В пути'], completed:['approved','Выполнен'], rejected:['rejected','Отклонён'], pending:['pending','Принят'], approved:['approved','Выполнен']};
+  return map[status] || ['pending','Обрабатывается'];
+}
+function renderFavorites() {
+  if (!state.favorites.length) return '<div class="section-head"><div><h1 class="section-title">Избранное</h1><div class="section-sub">Товары, которые ты сохранил</div></div></div><div class="empty"><div class="empty-emoji">♡</div>Здесь пока пусто.<p>Нажимай на сердечко в карточке товара, чтобы сохранить понравившееся.</p><button class="primary" data-action="go" data-page="catalog">Открыть каталог</button></div>';
+  return '<div class="section-head"><div><h1 class="section-title">Избранное</h1><div class="section-sub">' + state.favorites.length + ' сохранённых товаров</div></div><button class="mini-link" data-action="reload-favorites">Обновить</button></div><div class="card">' + state.favorites.map(p => '<div class="item-row"><div class="item-thumb">' + (p.images && p.images.length ? '<img src="' + esc(p.images[0]) + '" alt="" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;border-radius:10px">' : '♡') + '</div><div class="item-info"><div class="item-title">' + esc(p.brand) + '</div><div class="item-sub">' + esc(p.flavor) + ' · ' + (p.in_stock ? 'В наличии: ' + p.stock_qty + ' шт.' : 'Нет в наличии') + '</div><div class="price">' + money(p.price) + '</div></div><button class="small-button" data-action="add-cart" data-id="' + p.id + '" ' + (!p.in_stock || !p.stock_qty ? 'disabled' : '') + '>В корзину</button><button class="mini-link" data-action="favorite-toggle" data-id="' + p.id + '" aria-label="Убрать из избранного">♥</button></div>').join('') + '</div>';
 }
 function renderOrders() {
   if (!state.orders.length) return '<div class="section-head"><div><h1 class="section-title">Мои заказы</h1><div class="section-sub">История покупок</div></div></div><div class="empty"><div class="empty-emoji">◷</div>Заказов пока нет.<p>Оформленный заказ появится здесь.</p><button class="primary" data-action="go" data-page="catalog">В каталог</button></div>';
@@ -266,21 +270,22 @@ function renderOrders() {
       const st = statusInfo(o.status);
       const items = (o.items || []).map(i => '<div class="summary-line"><span>' + esc(i.brand) + ' — ' + esc(i.flavor) + ' × ' + Number(i.quantity || 1) + '</span><span>' + money(i.price * Number(i.quantity || 1)) + '</span></div>').join('');
       let review = '';
-      if (o.status === 'approved' && !o.has_review) {
+      if (o.status === 'completed' && !o.has_review) {
         if (state.reviewOrder === o.id) review = '<form id="review-form" data-order-id="' + o.id + '"><label class="field-label">Оценка</label><select class="field" name="rating"><option value="5">5 — Отлично</option><option value="4">4 — Хорошо</option><option value="3">3 — Нормально</option><option value="2">2 — Плохо</option><option value="1">1 — Очень плохо</option></select><label class="field-label">Отзыв</label><textarea class="field" name="text" required minlength="3" maxlength="2048" placeholder="Расскажи о покупке"></textarea><button class="primary" type="submit" style="margin-top:10px">Отправить отзыв</button></form>';
         else review = '<button class="secondary" data-action="write-review" data-id="' + o.id + '" style="width:100%;margin-top:10px">Оставить отзыв</button>';
       } else if (o.has_review) review = '<div class="item-sub">Спасибо за отзыв 💚</div>';
-      return '<article class="list-card"><div class="row"><b>Заказ №' + o.id + '</b><span class="status ' + st[0] + '">' + st[1] + '</span></div><div class="item-sub" style="margin:6px 0 11px">' + dateText(o.created_at) + ' · ' + (o.delivery_type === 'cdek' ? 'СДЭК' : 'Самовывоз') + '</div>' + items + '<div class="summary-line total"><span>Итого</span><span>' + money(o.total) + '</span></div>' + review + '</article>';
+      const history = (o.status_history || []).map(h => '<div class="item-sub">✓ ' + esc(statusInfo(h.status)[1]) + ' · ' + dateText(h.changed_at) + '</div>').join('');\n      return '<article class="list-card"><div class="row"><b>' + esc(o.order_number || ('DSS-' + String(o.id).padStart(6, '0'))) + '</b><span class="status ' + st[0] + '">' + st[1] + '</span></div><div class="item-sub" style="margin:6px 0 11px">' + dateText(o.created_at) + ' · ' + (o.delivery_type === 'cdek' ? 'Доставка' : 'Самовывоз') + '</div>' + items + '<div class="summary-line total"><span>Итого</span><span>' + money(o.total) + '</span></div>' + (history ? '<div class="divider"></div><div class="item-sub">История статусов</div>' + history : '') + review + '</article>';
     }).join('');
 }
 function renderProfile() {
   const p = state.profile || {};
-  const name = p.username || ('ID ' + p.user_id);
-  const left = Math.max(0, Number(p.next_bonus_at || 10) - Number(p.referrals_count || 0));
-  return '<div class="section-head"><div><h1 class="section-title">Профиль</h1><div class="section-sub">Статистика и бонусы</div></div></div><div class="card"><div class="profile-head"><div class="profile-avatar">' + esc(String(name).replace('@', '').charAt(0).toUpperCase() || 'D') + '</div><div><div class="profile-name">' + esc(name) + '</div><div class="item-sub">Telegram ID: ' + esc(p.user_id) + '</div></div></div><div class="divider"></div><div class="metric-grid"><div class="metric"><div class="metric-value">' + money(p.balance) + '</div><div class="metric-label">Потрачено всего</div></div><div class="metric"><div class="metric-value">' + esc(p.orders_count || 0) + '</div><div class="metric-label">Покупок подтверждено</div></div><div class="metric"><div class="metric-value">' + esc(p.referrals_count || 0) + '</div><div class="metric-label">Купивших рефералов</div></div><div class="metric"><div class="metric-value">' + esc(p.active_promos || 0) + '</div><div class="metric-label">Активных промо</div></div></div></div>' +
-    '<div class="card"><b>🎁 Реферальная программа</b><div class="item-sub">15% от первой покупки друга · −10% за каждые 10 покупателей</div><div class="summary-line"><span>До следующего бонуса</span><b>' + left + ' покупок</b></div>' +
-    (p.ref_link ? '<div class="row" style="margin-top:12px"><input class="field" id="ref-link" readonly value="' + esc(p.ref_link) + '" style="min-width:0;font-size:11px"><button class="secondary" data-action="copy-ref">Копировать</button></div><button class="secondary" data-action="share-ref" style="width:100%;margin-top:10px">Поделиться ссылкой</button>' : '<div class="item-sub">Ссылка появится после подключения Telegram-бота.</div>') + '</div>' +
-    '<div class="section-head"><h2 class="section-title">Быстрый доступ</h2></div><div class="card"><button class="secondary full-button" data-action="go" data-page="orders">📜 История заказов →</button><button class="secondary full-button" data-action="go" data-page="promos">🎟 Мои промокоды →</button><button class="secondary full-button" data-action="leaders" data-kind="buyers">🏆 Топ покупателей →</button><button class="secondary full-button" data-action="leaders" data-kind="refs">👥 Топ реферов →</button>' +
+  const name = [p.first_name, p.last_name].filter(Boolean).join(' ') || p.username || ('ID ' + p.user_id);
+  const initial = String(name).trim().charAt(0).toUpperCase() || 'D';
+  const avatar = p.photo_url ? '<img src="' + esc(p.photo_url) + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">' : esc(initial);
+  return '<div class="section-head"><div><h1 class="section-title">Личный кабинет</h1><div class="section-sub">Твой профиль в Dead Smoke Store</div></div></div>' +
+    '<div class="card"><div class="profile-head"><div class="profile-avatar">' + avatar + '</div><div><div class="profile-name">' + esc(name) + '</div><div class="item-sub">' + (p.username ? '@' + esc(String(p.username).replace('@','')) + ' · ' : '') + 'Telegram ID: ' + esc(p.user_id) + '</div></div></div><div class="divider"></div><div class="metric-grid"><div class="metric"><div class="metric-value">' + money(p.balance) + '</div><div class="metric-label">Всего потрачено</div></div><div class="metric"><div class="metric-value">' + esc(p.orders_count || 0) + '</div><div class="metric-label">Выполнено заказов</div></div><div class="metric"><div class="metric-value">' + state.favorites.length + '</div><div class="metric-label">В избранном</div></div><div class="metric"><div class="metric-value">' + esc(p.active_promos || 0) + '</div><div class="metric-label">Активных промокодов</div></div></div></div>' +
+    '<div class="section-head"><h2 class="section-title">Мой магазин</h2></div><div class="card"><button class="secondary full-button" data-action="go" data-page="orders">📦 История и статусы заказов →</button><button class="secondary full-button" data-action="go" data-page="favorites">♡ Избранные товары (' + state.favorites.length + ') →</button><button class="secondary full-button" data-action="go" data-page="promos">🎟 Мои персональные промокоды →</button>' +
+    (p.ref_link ? '<div class="divider"></div><b>Пригласить друга</b><div class="item-sub">Поделись ссылкой на магазин</div><div class="row" style="margin-top:12px"><input class="field" id="ref-link" readonly value="' + esc(p.ref_link) + '" style="min-width:0;font-size:11px"><button class="secondary" data-action="copy-ref">Копировать</button></div><button class="secondary" data-action="share-ref" style="width:100%;margin-top:10px">Поделиться ссылкой</button>' : '') +
     (state.user && state.user.is_admin ? '<div class="divider"></div><button class="primary" data-action="go" data-page="admin">🛠 Открыть админ-панель</button>' : '') + '</div>';
 }
 function renderPromos() {
@@ -375,7 +380,7 @@ async function loadAdminTab(tab) {
   if (tab === 'stats') state.adminStats = await api('/api/admin/stats?period=' + encodeURIComponent(state.statsPeriod || '30d'));
 }
 async function loadPage(page) {
-  if (page === 'orders') state.orders = await api('/api/orders');
+  if (page === 'orders') state.orders = await api('/api/orders');\n  if (page === 'favorites') state.favorites = await api('/api/favorites');
   if (page === 'profile') state.profile = await api('/api/profile');
   if (page === 'promos') state.promos = await api('/api/promos');
   if (page === 'leaders') {
@@ -410,7 +415,7 @@ async function action(button) {
     renderProductGallery(product.id);
     return;
   }
-  if (name === 'add-cart') {
+  if (name === 'favorite-toggle') {\n    try { await api('/api/favorites/toggle', { method: 'POST', body: JSON.stringify({ product_id: id }) }); state.favorites = await api('/api/favorites'); render(); toast(state.favorites.some(p => p.id === id) ? 'Добавлено в избранное' : 'Убрано из избранного'); } catch (error) { toast(error.message); } return;\n  }\n  if (name === 'reload-favorites') { try { state.favorites = await api('/api/favorites'); render(); } catch (error) { toast(error.message); } return; }\n  if (name === 'add-cart') {
     try { state.cart = await api('/api/cart/add', { method: 'POST', body: JSON.stringify({ product_id: id }) }); state.products = await api('/api/products'); haptic('light'); render(); toast('Добавлено в корзину'); }
     catch (error) { toast(error.message); } return;
   }
@@ -484,7 +489,7 @@ async function action(button) {
     try { await api('/api/admin/products/' + id, { method: 'DELETE' }); await loadAdminTab('products'); render(); toast('Готово'); }
     catch (error) { toast(error.message); } return;
   }
-  if (name === 'approve-order' || name === 'reject-order') {
+  if (name === 'change-order-status') {\n    const nextStatus = button.dataset.status;\n    if (!confirm('Изменить статус заказа №' + id + ' на «' + statusInfo(nextStatus)[1] + '»?')) return;\n    try { await api('/api/admin/orders/' + id + '/status', { method: 'POST', body: JSON.stringify({ status: nextStatus }) }); await loadAdminTab('orders'); render(); toast('Статус заказа обновлён'); } catch (error) { toast(error.message); } return;\n  }\n  if (name === 'approve-order' || name === 'reject-order') {
     const accept = name === 'approve-order';
     if (!confirm((accept ? 'Подтвердить' : 'Отклонить') + ' заказ №' + id + '?')) return;
     try { await api('/api/admin/orders/' + id + '/' + (accept ? 'approve' : 'reject'), { method: 'POST' }); await loadAdminTab('orders'); render(); toast(accept ? 'Заказ подтверждён' : 'Заказ отклонён'); }
