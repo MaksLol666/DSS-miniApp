@@ -26,7 +26,7 @@ from config import (
     REFERRAL_BONUS_PERCENT, REFERRAL_MILESTONE, REFERRAL_MILESTONE_DISCOUNT,
 )
 from database.db import SessionLocal, engine, init_db
-from database.models import CartItem, CartPromo, Category, ClubAccount, ClubAchievementUnlock, ClubTaskConfig, ClubTaskProgress, ClubTitleSelection, ClubTransaction, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User
+from database.models import CartItem, CartPromo, Category, ClubAccount, ClubAchievementUnlock, ClubSeason, ClubSeasonPoint, ClubSeasonReward, ClubTaskConfig, ClubTaskProgress, ClubTitleSelection, ClubTransaction, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User
 from image_utils import optimize_product_image
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -655,11 +655,41 @@ async def orders(user: dict = Depends(current_user)):
 
 
 CLUB_LEVELS = [
-    {"code": "MEMBER", "title": "MEMBER", "orders": 0, "points": 0},
-    {"code": "ACTIVE", "title": "ACTIVE", "orders": 3, "points": 300},
-    {"code": "PREMIUM", "title": "PREMIUM", "orders": 7, "points": 900},
-    {"code": "VIP", "title": "VIP", "orders": 15, "points": 2000},
-    {"code": "LEGEND", "title": "LEGEND", "orders": 30, "points": 5000},
+    {"code": "MEMBER", "title": "MEMBER", "orders": 0, "points": 0, "referrals": 0,
+     "perks": ["Базовый клубный профиль", "История DCP и доступ к заданиям"]},
+    {"code": "ACTIVE", "title": "ACTIVE", "orders": 3, "points": 300, "referrals": 0,
+     "perks": ["Эксклюзивный значок ACTIVE", "Особый цвет уровня в профиле"]},
+    {"code": "PREMIUM", "title": "PREMIUM", "orders": 10, "points": 1000, "referrals": 0,
+     "perks": ["Уникальный титул PREMIUM", "Эксклюзивная карточка профиля"]},
+    {"code": "VIP", "title": "VIP", "orders": 25, "points": 3000, "referrals": 0,
+     "perks": ["Рамка VIP", "Закрытые предложения магазина", "Дополнительные клубные задания"]},
+    {"code": "LEGEND", "title": "LEGEND", "orders": 75, "points": 10000, "referrals": 0,
+     "perks": ["Легендарная рамка", "Уникальный эффект профиля", "Секретные задания", "Ранний доступ к отдельным новинкам"]},
+    {"code": "AMBASSADOR", "title": "AMBASSADOR", "orders": 150, "points": 25000, "referrals": 10,
+     "perks": ["Уникальная анимация профиля", "Эксклюзивный титул AMBASSADOR", "Особая рамка AMBASSADOR", "Ранние анонсы товаров", "Приватные предложения для амбассадоров"]},
+]
+
+ORDER_MILESTONES = [(5, 100), (10, 250), (25, 500), (50, 1000), (100, 2500)]
+REFERRAL_MILESTONES = [(5, 300), (10, 700), (25, 1500), (50, 3500), (100, 8000)]
+
+# UTC timestamps corresponding to 00:00 Moscow time on 1 December 2026.
+SEASON_FIRST_START = datetime(2026, 11, 30, 21, 0)
+SEASON_LENGTH_DAYS = 30
+SEASON_DAILY_TASK_SP = 15
+SEASON_WEEKLY_TASK_SP = 75
+SEASON_PERSONAL_REWARDS = [
+    {"points": 100, "key": "season_badge", "title": "Сезонный значок"},
+    {"points": 250, "key": "season_title", "title": "Сезонный титул"},
+    {"points": 500, "key": "season_card", "title": "Сезонная карточка"},
+    {"points": 1000, "key": "season_frame", "title": "Эксклюзивная рамка"},
+    {"points": 1500, "key": "season_effect", "title": "Секретный сезонный эффект"},
+]
+SEASON_TOP_REWARDS = [
+    {"from": 1, "to": 1, "key": "top_1", "title": "Уникальная легендарная сезонная рамка"},
+    {"from": 2, "to": 3, "key": "top_2_3", "title": "Эксклюзивный сезонный титул"},
+    {"from": 4, "to": 10, "key": "top_4_10", "title": "Редкий сезонный значок"},
+    {"from": 11, "to": 25, "key": "top_11_25", "title": "Сезонная карточка профиля"},
+    {"from": 26, "to": 50, "key": "top_26_50", "title": "Особый значок участника сезона"},
 ]
 
 
@@ -683,13 +713,14 @@ async def _award_club_dcp(session, user_id: int, amount: int, event_key: str, re
 
 
 CLUB_ACHIEVEMENTS = [
-    {"key": "first_order", "title": "FIRST STEP", "description": "Заверши свой первый заказ", "icon": "🛍️", "metric": "orders", "target": 1, "reward": 100, "reward_type": "badge"},
-    {"key": "five_orders", "title": "REGULAR", "description": "Заверши 5 заказов", "icon": "⭐", "metric": "orders", "target": 5, "reward": 250, "reward_type": "title"},
-    {"key": "ten_orders", "title": "LOYAL", "description": "Заверши 10 заказов", "icon": "💜", "metric": "orders", "target": 10, "reward": 500, "reward_type": "badge"},
-    {"key": "twenty_five_orders", "title": "VETERAN", "description": "Заверши 25 заказов", "icon": "🏆", "metric": "orders", "target": 25, "reward": 1000, "reward_type": "title"},
-    {"key": "first_referral", "title": "CONNECTOR", "description": "Пригласи друга, который завершит заказ", "icon": "🤝", "metric": "referrals", "target": 1, "reward": 150, "reward_type": "badge"},
-    {"key": "five_referrals", "title": "AMBASSADOR", "description": "Получи 5 завершивших покупку рефералов", "icon": "👑", "metric": "referrals", "target": 5, "reward": 500, "reward_type": "title"},
-    {"key": "first_review", "title": "YOUR VOICE", "description": "Опубликуй первый одобренный отзыв", "icon": "✍️", "metric": "reviews", "target": 1, "reward": 100, "reward_type": "badge"},
+    # These are cosmetic unlocks; DCP is awarded by repeatable milestone rules below.
+    {"key": "first_order", "title": "FIRST STEP", "description": "Заверши свой первый заказ", "icon": "🛍️", "metric": "orders", "target": 1, "reward": 0, "reward_type": "badge"},
+    {"key": "five_orders", "title": "REGULAR", "description": "Заверши 5 заказов", "icon": "⭐", "metric": "orders", "target": 5, "reward": 0, "reward_type": "title"},
+    {"key": "ten_orders", "title": "LOYAL", "description": "Заверши 10 заказов", "icon": "💜", "metric": "orders", "target": 10, "reward": 0, "reward_type": "badge"},
+    {"key": "twenty_five_orders", "title": "VETERAN", "description": "Заверши 25 заказов", "icon": "🏆", "metric": "orders", "target": 25, "reward": 0, "reward_type": "title"},
+    {"key": "first_referral", "title": "CONNECTOR", "description": "Пригласи друга, который завершит заказ", "icon": "🤝", "metric": "referrals", "target": 1, "reward": 0, "reward_type": "badge"},
+    {"key": "five_referrals", "title": "AMBASSADOR", "description": "Получи 5 завершивших покупку рефералов", "icon": "👑", "metric": "referrals", "target": 5, "reward": 0, "reward_type": "title"},
+    {"key": "first_review", "title": "YOUR VOICE", "description": "Опубликуй первый одобренный отзыв", "icon": "✍️", "metric": "reviews", "target": 1, "reward": 0, "reward_type": "badge"},
 ]
 DEFAULT_CLUB_TASKS = [
     {"key": "daily_order", "title": "DAILY CHECK", "description": "Заверши 1 заказ за день", "period": "daily", "event_type": "orders", "target": 1, "reward": 30, "active": True},
@@ -766,12 +797,113 @@ async def _sync_club_tasks(session, user_id: int) -> list[str]:
             progress.claimed = True
             amount = await _award_club_dcp(session, user_id, int(task.reward),
                 f"task:{task.key}:{period_key}:{user_id}", f"Задание: {task.title}")
-            messages.append(f"🎯 Задание выполнено: {task.title} · +{amount} DCP")
+            season_points = SEASON_DAILY_TASK_SP if task.period == "daily" else SEASON_WEEKLY_TASK_SP
+            sp_earned = await _award_season_points(session, user_id, season_points,
+                f"season:task:{task.key}:{period_key}:{user_id}", f"Сезонное задание: {task.title}")
+            messages.append(f"🎯 Задание выполнено: {task.title} · +{amount} DCP" + (f" · +{sp_earned} SP" if sp_earned else ""))
     return messages
+
+
+async def _sync_repeatable_milestones(session, user_id: int) -> list[str]:
+    metrics = await _club_metrics(session, user_id)
+    messages = []
+    for milestone_type, milestones, metric_name in (
+        ("orders", ORDER_MILESTONES, "orders"),
+        ("referrals", REFERRAL_MILESTONES, "referrals"),
+    ):
+        total = int(metrics[metric_name])
+        for threshold, reward in milestones:
+            cycles = total // threshold
+            for cycle in range(1, cycles + 1):
+                unit = "заказов" if milestone_type == "orders" else "купивших рефералов"
+                reason = f"Рубеж: каждые {threshold} {unit} · цикл {cycle}"
+                event_key = f"milestone:{milestone_type}:{threshold}:{cycle}:{user_id}"
+                earned = await _award_club_dcp(session, user_id, reward, event_key, reason)
+                if earned:
+                    messages.append(f"🏆 {reason}: +{earned} DCP")
+    return messages
+
+
+async def _ensure_season(session, now: datetime | None = None):
+    now = now or datetime.utcnow()
+    first_end = SEASON_FIRST_START + timedelta(days=SEASON_LENGTH_DAYS)
+    first = await session.get(ClubSeason, 1)
+    if first is None:
+        first = ClubSeason(season_number=1, title="Season 01 · Новый год",
+                           starts_at=SEASON_FIRST_START, ends_at=first_end)
+        session.add(first)
+        await session.flush()
+    if now < SEASON_FIRST_START:
+        return first, False
+    season_number = int((now - SEASON_FIRST_START).total_seconds() // (SEASON_LENGTH_DAYS * 86400)) + 1
+    current = first
+    for number in range(2, season_number + 1):
+        current = await session.get(ClubSeason, number)
+        if current is None:
+            starts_at = SEASON_FIRST_START + timedelta(days=SEASON_LENGTH_DAYS * (number - 1))
+            current = ClubSeason(season_number=number, title=f"Season {number:02d}",
+                                 starts_at=starts_at, ends_at=starts_at + timedelta(days=SEASON_LENGTH_DAYS))
+            session.add(current)
+            await session.flush()
+    return current, current.starts_at <= now < current.ends_at
+
+
+async def _award_season_points(session, user_id: int, amount: int, event_key: str, reason: str) -> int:
+    if amount <= 0:
+        return 0
+    season, active = await _ensure_season(session)
+    if not active:
+        return 0
+    exists = (await session.execute(select(ClubSeasonPoint.id).where(ClubSeasonPoint.event_key == event_key))).first()
+    if exists:
+        return 0
+    session.add(ClubSeasonPoint(user_id=user_id, season_number=season.season_number,
+                                event_key=event_key, amount=amount, reason=reason))
+    await session.flush()
+    return amount
+
+
+async def _finalize_expired_seasons(session, now: datetime):
+    seasons = (await session.execute(select(ClubSeason).where(ClubSeason.ends_at <= now))).scalars().all()
+    for season in seasons:
+        rows = (await session.execute(
+            select(ClubSeasonPoint.user_id, func.sum(ClubSeasonPoint.amount).label("points"),
+                   func.max(ClubSeasonPoint.created_at).label("reached_at"))
+            .where(ClubSeasonPoint.season_number == season.season_number)
+            .group_by(ClubSeasonPoint.user_id)
+        )).all()
+        ranking = sorted(rows, key=lambda row: (-int(row.points or 0), row.reached_at or datetime.max, int(row.user_id)))
+        for row in rows:
+            points = int(row.points or 0)
+            for reward in SEASON_PERSONAL_REWARDS:
+                if points >= reward["points"]:
+                    exists = (await session.execute(select(ClubSeasonReward.id).where(
+                        ClubSeasonReward.user_id == row.user_id,
+                        ClubSeasonReward.season_number == season.season_number,
+                        ClubSeasonReward.reward_key == reward["key"]
+                    ))).first()
+                    if not exists:
+                        session.add(ClubSeasonReward(user_id=row.user_id, season_number=season.season_number,
+                            reward_key=reward["key"], title=reward["title"]))
+        for rank, row in enumerate(ranking, 1):
+            if rank > 50:
+                break
+            reward = next((item for item in SEASON_TOP_REWARDS if item["from"] <= rank <= item["to"]), None)
+            if reward:
+                exists = (await session.execute(select(ClubSeasonReward.id).where(
+                    ClubSeasonReward.user_id == row.user_id,
+                    ClubSeasonReward.season_number == season.season_number,
+                    ClubSeasonReward.reward_key == reward["key"]
+                ))).first()
+                if not exists:
+                    session.add(ClubSeasonReward(user_id=row.user_id, season_number=season.season_number,
+                        reward_key=reward["key"], title=reward["title"], rank=rank))
+    await session.flush()
 
 
 async def _sync_club_activity(session, user_id: int) -> list[str]:
     messages = await _sync_club_achievements(session, user_id)
+    messages.extend(await _sync_repeatable_milestones(session, user_id))
     messages.extend(await _sync_club_tasks(session, user_id))
     return messages
 
@@ -860,26 +992,83 @@ async def club_profile(user: dict = Depends(current_user)):
         orders = int((await session.execute(select(func.count(Order.id)).where(
             Order.user_id == uid, Order.status == "completed"
         ))).scalar() or 0)
+        referrals = int((await session.execute(select(func.count(User.id)).where(
+            User.referrer_id == uid, User.first_purchase_done.is_(True)
+        ))).scalar() or 0)
         rows = (await session.execute(select(ClubTransaction).where(
             ClubTransaction.user_id == uid
         ).order_by(ClubTransaction.created_at.desc(), ClubTransaction.id.desc()).limit(20))).scalars().all()
     level_index = 0
     for index, level in enumerate(CLUB_LEVELS):
-        if orders >= level["orders"] and lifetime >= level["points"]:
+        if orders >= level["orders"] and lifetime >= level["points"] and referrals >= level.get("referrals", 0):
             level_index = index
     current = CLUB_LEVELS[level_index]
     nxt = CLUB_LEVELS[level_index + 1] if level_index + 1 < len(CLUB_LEVELS) else None
-    progress = 100 if not nxt else round(min(orders / max(nxt["orders"], 1), lifetime / max(nxt["points"], 1)) * 100)
+    if nxt:
+        ratios = [orders / max(nxt["orders"], 1), lifetime / max(nxt["points"], 1)]
+        if nxt.get("referrals", 0):
+            ratios.append(referrals / nxt["referrals"])
+        progress = round(min(ratios) * 100)
+    else:
+        progress = 100
     return {
         "balance": balance, "lifetime_earned": lifetime, "completed_orders": orders,
-        "level": current["code"], "level_title": current["title"],
+        "completed_referrals": referrals,
+        "level": current["code"], "level_title": current["title"], "level_perks": current["perks"],
+        "levels": [{**level, "unlocked": level_index >= i} for i, level in enumerate(CLUB_LEVELS)],
         "next_level": nxt["code"] if nxt else None,
         "next_level_orders": nxt["orders"] if nxt else None,
         "next_level_points": nxt["points"] if nxt else None,
+        "next_level_referrals": nxt.get("referrals", 0) if nxt else 0,
         "progress_percent": max(0, min(100, progress)),
         "transactions": [{"id": row.id, "kind": row.kind, "amount": int(row.amount),
             "balance_after": int(row.balance_after), "reason": row.reason,
             "created_at": row.created_at.isoformat() if row.created_at else ""} for row in rows]
+    }
+
+
+@app.get("/api/club/season")
+async def club_season(user: dict = Depends(current_user)):
+    uid = user["id"]
+    now = datetime.utcnow()
+    async with SessionLocal() as session:
+        season, active = await _ensure_season(session, now)
+        await _finalize_expired_seasons(session, now)
+        rows = (await session.execute(
+            select(User.id, User.username,
+                   func.sum(ClubSeasonPoint.amount).label("points"),
+                   func.max(ClubSeasonPoint.created_at).label("reached_at"))
+            .join(ClubSeasonPoint, ClubSeasonPoint.user_id == User.id)
+            .where(ClubSeasonPoint.season_number == season.season_number)
+            .group_by(User.id, User.username)
+        )).all()
+        rewards = (await session.execute(select(ClubSeasonReward).where(
+            ClubSeasonReward.user_id == uid
+        ).order_by(ClubSeasonReward.season_number.desc(), ClubSeasonReward.id.desc()))).scalars().all()
+        await session.commit()
+    ranking = sorted(
+        [{"user_id": int(row.id), "username": row.username or "",
+          "points": int(row.points or 0), "reached_at": row.reached_at}
+         for row in rows],
+        key=lambda row: (-row["points"], row["reached_at"] or datetime.max, row["user_id"])
+    )
+    for index, row in enumerate(ranking, 1):
+        row["position"] = index
+    mine = next((row for row in ranking if row["user_id"] == uid), None)
+    my_points = mine["points"] if mine else 0
+    my_rank = mine["position"] if mine else None
+    return {
+        "season_number": season.season_number, "title": season.title, "active": active,
+        "starts_at": season.starts_at.isoformat(), "ends_at": season.ends_at.isoformat(),
+        "days_left": max(0, (season.ends_at - now).days),
+        "points": my_points, "rank": my_rank, "participants": len(ranking),
+        "leaderboard": [{"position": row["position"], "user_id": row["user_id"],
+                         "username": row["username"], "points": row["points"]} for row in ranking[:50]],
+        "personal_rewards": [{**reward, "unlocked": my_points >= reward["points"]}
+                             for reward in SEASON_PERSONAL_REWARDS],
+        "top_rewards": SEASON_TOP_REWARDS,
+        "earned_rewards": [{"season": r.season_number, "key": r.reward_key, "title": r.title, "rank": r.rank}
+                           for r in rewards],
     }
 
 
@@ -1017,8 +1206,11 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
             if buyer:
                 buyer.balance = float(buyer.balance or 0) + float(order.total)
                 earned = await _award_club_dcp(session, buyer.id, 100, f"order:{order.id}:completed", "Завершённый заказ")
+                season_earned = await _award_season_points(session, buyer.id, 10, f"season:order:{order.id}", "Завершённый заказ")
                 if earned:
                     notifications.append((buyer.id, "💜 DSS CLUB: +100 DCP за завершённый заказ."))
+                if season_earned:
+                    notifications.append((buyer.id, "❄️ DSS CLUB: +10 сезонных очков SP за заказ."))
                 if not buyer.first_purchase_done:
                     first_bonus = await _award_club_dcp(session, buyer.id, 200, f"user:{buyer.id}:first-order", "Бонус за первую покупку")
                     if first_bonus:
@@ -1032,8 +1224,11 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                         if referrer:
                             referrer.referrals_count = int(referrer.referrals_count or 0) + 1
                             referral_dcp = await _award_club_dcp(session, ref_id, 150, f"referral:first-order:{buyer.id}", "Приглашённый завершил первую покупку")
+                            referral_sp = await _award_season_points(session, ref_id, 25, f"season:referral:{buyer.id}", "Новый приглашённый завершил покупку")
                             if referral_dcp:
                                 notifications.append((ref_id, "👥 DSS CLUB: +150 DCP — приглашённый совершил первую покупку."))
+                            if referral_sp:
+                                notifications.append((ref_id, "❄️ DSS CLUB: +25 сезонных очков SP за нового покупателя по твоей ссылке."))
                             next_at = int(referrer.next_bonus_at or REFERRAL_MILESTONE)
                             if referrer.referrals_count >= next_at:
                                 milestone_code = await _create_promo(session, ref_id, "percent", REFERRAL_MILESTONE_DISCOUNT)
