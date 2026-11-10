@@ -1,7 +1,22 @@
 (function () {
 'use strict';
-const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-const initData = tg && tg.initData ? tg.initData : '';
+let tg = null;
+let initData = '';
+function captureTelegram() {
+  tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  initData = tg && tg.initData ? tg.initData : '';
+  return !!tg;
+}
+function waitForTelegram(timeoutMs) {
+  if (captureTelegram()) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (captureTelegram()) { clearInterval(timer); resolve(true); }
+      else if (Date.now() - started >= timeoutMs) { clearInterval(timer); resolve(false); }
+    }, 50);
+  });
+}
 const content = document.getElementById('content');
 const state = {
   user: null, page: 'catalog', categories: [], products: [], cart: {items: [], promos: []},
@@ -706,6 +721,8 @@ document.addEventListener('submit', async event => {
 });
 
 async function init() {
+  await waitForTelegram(4000);
+  captureTelegram();
   setupTelegram();
   if (!initData) {
     document.getElementById('topbar').innerHTML = '<div class="brand"><div class="logo">DSS</div><div><div class="brand-name">DEAD SMOKE STORE</div><div class="brand-sub">Telegram Mini App</div></div></div>';
