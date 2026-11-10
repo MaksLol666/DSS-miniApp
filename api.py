@@ -707,7 +707,7 @@ async def _ensure_club_tasks(session):
 async def _club_metrics(session, user_id: int) -> dict:
     orders = int((await session.execute(select(func.count(Order.id)).where(Order.user_id == user_id, Order.status == "completed"))).scalar() or 0)
     referrals = int((await session.execute(select(func.count(User.id)).where(User.referrer_id == user_id, User.first_purchase_done.is_(True)))).scalar() or 0)
-    reviews = int((await session.execute(select(func.count(Review.id)).where(Review.user_id == user_id, Review.status == "approved"))).scalar() or 0)
+    reviews = int((await session.execute(select(func.count(Review.id)).where(Review.user_id == user_id, Review.status == "published"))).scalar() or 0)
     return {"orders": orders, "referrals": referrals, "reviews": reviews}
 
 
@@ -823,7 +823,9 @@ async def admin_club_tasks(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         await _ensure_club_tasks(session)
         rows = (await session.execute(select(ClubTaskConfig).order_by(ClubTaskConfig.period, ClubTaskConfig.key))).scalars().all()
-        return [{"key": t.key, "title": t.title, "description": t.description, "period": t.period, "target": int(t.target), "reward": int(t.reward), "active": bool(t.active)} for t in rows]
+        result = [{"key": t.key, "title": t.title, "description": t.description, "period": t.period, "target": int(t.target), "reward": int(t.reward), "active": bool(t.active)} for t in rows]
+        await session.commit()
+        return result
 
 
 @app.put("/api/admin/club/tasks/{task_key}")
