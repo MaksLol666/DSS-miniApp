@@ -949,11 +949,19 @@ async def _sync_club_achievements(session, user_id: int) -> list[str]:
 
 
 def _club_period(task, now):
+    # Database timestamps are stored as naive UTC. Club periods, however, are
+    # defined by Moscow local time (UTC+3), so convert the local boundary back
+    # to naive UTC before querying OrderStatusHistory.created_at.
+    moscow_now = now + timedelta(hours=3)
     if task.period == "daily":
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        return start, start.strftime("%Y-%m-%d")
-    start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-    return start, start.strftime("%G-W%V")
+        local_start = moscow_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_utc = local_start - timedelta(hours=3)
+        return start_utc, local_start.strftime("%Y-%m-%d")
+    local_start = (moscow_now - timedelta(days=moscow_now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    start_utc = local_start - timedelta(hours=3)
+    return start_utc, local_start.strftime("%G-W%V")
 
 
 async def _club_task_count(session, user_id: int, task, start) -> int:
@@ -1881,6 +1889,14 @@ async def review_image(filename: str):
     if not target.is_file():
         raise HTTPException(404, "Фотография не найдена.")
     return FileResponse(target, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    icon = STATIC_DIR / "favicon.svg"
+    if not icon.is_file():
+        raise HTTPException(404, "Favicon not found.")
+    return FileResponse(icon, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/")
