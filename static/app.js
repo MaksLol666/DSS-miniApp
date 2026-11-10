@@ -48,12 +48,27 @@ function setupTelegram() {
   } catch (_e) {}
 }
 
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs || 15000);
+  try {
+    return await fetch(url, Object.assign({}, options || {}, { signal: controller.signal }));
+  } catch (error) {
+    if (controller.signal.aborted || (error && error.name === 'AbortError')) {
+      throw new Error('Сервер не ответил за 15 секунд. Проверь соединение и попробуй ещё раз.');
+    }
+    throw new Error('Не удалось соединиться с сервером. Проверь интернет и попробуй ещё раз.');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function api(path, options, allowCaptchaRetry) {
   const opts = options || {};
   const headers = Object.assign({}, opts.headers || {});
   if (initData) headers['X-Init-Data'] = initData;
   if (opts.body && !(opts.body instanceof FormData) && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  const response = await fetch(path, Object.assign({}, opts, { headers, credentials: 'include' }));
+  const response = await fetchWithTimeout(path, Object.assign({}, opts, { headers, credentials: 'include' }), 15000);
   const body = await response.json().catch(() => ({ detail: 'Сервер вернул неожиданный ответ.' }));
   if (response.status === 428 && body.detail === 'CAPTCHA_REQUIRED' && allowCaptchaRetry !== false) {
     await showCaptcha();
@@ -84,7 +99,7 @@ function showCaptcha() {
         }
       } catch (_e) { mountCaptcha(); }
     };
-    fetch('/api/captcha/config').then(r => r.json()).then(config => {
+    fetchWithTimeout('/api/captcha/config', {}, 10000).then(r => r.json()).then(config => {
       if (!config.enabled || !config.site_key) {
         document.getElementById('captcha-status').textContent = 'CAPTCHA не настроена на сервере. Обратись к администратору.';
         return;
