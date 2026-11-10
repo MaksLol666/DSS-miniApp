@@ -756,7 +756,8 @@ async def _sync_club_achievements(session, user_id: int) -> list[str]:
         session.add(ClubAchievementUnlock(user_id=user_id, achievement_key=item["key"]))
         await session.flush()
         amount = await _award_club_dcp(session, user_id, item["reward"], f"achievement:{item['key']}:{user_id}", f"Достижение: {item['title']}")
-        messages.append(f"🏆 Достижение открыто: {item['title']} · +{amount} DCP")
+        reward_text = f" · +{amount} DCP" if amount else ""
+        messages.append(f"🏆 Достижение открыто: {item['title']}{reward_text}")
     return messages
 
 
@@ -818,7 +819,19 @@ async def _sync_repeatable_milestones(session, user_id: int) -> list[str]:
                 unit = "заказов" if milestone_type == "orders" else "купивших рефералов"
                 reason = f"Рубеж: каждые {threshold} {unit} · цикл {cycle}"
                 event_key = f"milestone:{milestone_type}:{threshold}:{cycle}:{user_id}"
-                earned = await _award_club_dcp(session, user_id, reward, event_key, reason)
+                legacy_keys = {
+                    ("orders", 5, 1): f"achievement:five_orders:{user_id}",
+                    ("orders", 10, 1): f"achievement:ten_orders:{user_id}",
+                    ("orders", 25, 1): f"achievement:twenty_five_orders:{user_id}",
+                    ("referrals", 5, 1): f"achievement:five_referrals:{user_id}",
+                }
+                legacy_key = legacy_keys.get((milestone_type, threshold, cycle))
+                legacy_paid = False
+                if legacy_key:
+                    legacy_paid = bool((await session.execute(
+                        select(ClubTransaction.id).where(ClubTransaction.event_key == legacy_key)
+                    )).first())
+                earned = 0 if legacy_paid else await _award_club_dcp(session, user_id, reward, event_key, reason)
                 if earned:
                     messages.append(f"🏆 {reason}: +{earned} DCP")
     return messages
