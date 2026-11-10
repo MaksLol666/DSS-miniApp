@@ -205,3 +205,34 @@ class Review(Base):
     has_photo: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(16), default="pending")
     published_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ClubSeason(Base):
+    __tablename__ = "club_seasons"
+    season_number: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(96))
+    starts_at: Mapped[datetime] = mapped_column(DateTime)
+    ends_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class ClubSeasonPoint(Base):
+    __tablename__ = "club_season_points"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
+    season_number: Mapped[int] = mapped_column(ForeignKey("club_seasons.season_number"), index=True)
+    event_key: Mapped[str] = mapped_column(String(128), unique=True)
+    amount: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(String(160))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ClubSeasonReward(Base):
+    __tablename__ = "club_season_rewards"
+    __table_args__ = (UniqueConstraint("user_id", "season_number", "reward_key", name="uq_club_season_reward"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
+    season_number: Mapped[int] = mapped_column(ForeignKey("club_seasons.season_number"), index=True)
+    reward_key: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(160))
+    rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
