@@ -31,3 +31,43 @@ main{padding-bottom:12px}.hero{position:relative;overflow:hidden;border:1px soli
 @media(max-width:360px){.shell{padding:0 11px}.hero h1{font-size:25px}.form-row{grid-template-columns:1fr}.product-body{padding:11px}.price{font-size:14px}}
 
 .favorite-toggle{position:absolute;top:9px;right:9px;z-index:2;width:34px;height:34px;border:1px solid rgba(255,255,255,.14);border-radius:50%;background:rgba(12,12,18,.82);color:#f4f0fa;font-size:20px;line-height:1;display:grid;place-items:center;cursor:pointer}.favorite-toggle:active{transform:scale(.94)}
+
+
+/* DSS CLUB — premium/game hybrid with winter season styling */
+.club-hero{position:relative;overflow:hidden;border:1px solid #62458a;border-radius:24px;padding:21px;margin:10px 0 18px;background:radial-gradient(ellipse at 90% 0%,#9b77e52b,transparent 42%),linear-gradient(135deg,#241833,#111019 72%);box-shadow:0 18px 50px #0004}
+.club-hero:after{content:"✦";position:absolute;right:18px;top:10px;color:#d9c6ff;opacity:.12;font-size:110px;pointer-events:none}
+.club-level-name{font-size:27px;font-weight:950;letter-spacing:1.3px;color:#fff;margin-top:5px}
+.club-star{font-size:34px;color:#d0b5ff;text-shadow:0 0 22px #a77aff88}
+.club-balance-label{font-size:10px;letter-spacing:1.5px;color:#c6a8f4;margin-top:22px;font-weight:850}
+.club-balance{font-size:37px;font-weight:950;letter-spacing:-1px;margin-top:3px;color:#fff}
+.club-balance span{font-size:14px;color:#c4a5fd;letter-spacing:1px}
+.club-next{color:#d7c8ec;margin-top:12px}
+.club-progress{height:8px;background:#342743;border-radius:99px;overflow:hidden;margin-top:9px}
+.club-progress>div{height:100%;background:linear-gradient(90deg,#8b5cf6,#e0c4ff);border-radius:99px;box-shadow:0 0 14px #b78bff66}
+.club-progress-label{color:#b99be8;margin-top:7px}
+.club-perk{display:flex;gap:9px;align-items:flex-start;color:#d7d1e5;font-size:12px;margin-top:9px}
+.club-perk span{color:#c39aff}
+.club-level-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.club-level{border:1px solid #302b3b;background:linear-gradient(145deg,#171620,#111118);border-radius:15px;padding:12px;min-width:0}
+.club-level.is-unlocked{border-color:#7255a0;background:linear-gradient(145deg,#241b34,#14121d)}
+.club-level .row b{font-size:12px;letter-spacing:.6px}
+.season-panel{position:relative;overflow:hidden;border:1px solid #70552d;border-radius:22px;padding:17px;margin:18px 0;background:radial-gradient(ellipse at 90% 0%,#f0c56d22,transparent 44%),linear-gradient(135deg,#251b2b,#111019 70%);box-shadow:0 14px 40px #0005}
+.season-panel:before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.2;background-image:radial-gradient(circle at 12% 18%,#fff 0 1px,transparent 2px),radial-gradient(circle at 82% 26%,#fff 0 1px,transparent 2px),radial-gradient(circle at 65% 70%,#fff 0 1px,transparent 2px),radial-gradient(circle at 35% 82%,#fff 0 1px,transparent 2px);background-size:110px 90px}
+.season-title{font-size:21px;margin:6px 0 0;color:#f4dfb6;letter-spacing:-.5px}
+.season-status{border:1px solid #8a7042;border-radius:999px;padding:5px 8px;font-size:9px;font-weight:900;color:#f5dba5;letter-spacing:1px}
+.season-meta{font-size:10px;color:#b7a9bb;margin-top:7px}
+.season-score{display:flex;align-items:baseline;gap:8px;margin-top:12px}
+.season-score strong{font-size:34px;color:#fff;font-weight:950}
+.season-score span{font-size:13px;color:#e6c47f;font-weight:900}
+.season-divider{height:1px;background:#6b543733;margin:14px 0}
+.season-subtitle{font-size:12px;color:#f1dfbf}
+.season-rewards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:10px}
+.season-reward{border:1px solid #594b3a;background:#1c1820;border-radius:12px;padding:9px;display:flex;flex-direction:column;gap:3px}
+.season-reward.is-unlocked{border-color:#b28a4c;background:#2b211b}
+.season-reward b{font-size:11px;color:#edcf91}
+.season-reward span{font-size:10px;color:#e6e0ea}
+.season-reward small{font-size:9px;color:#a99caf}
+.season-rank-row{display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #51433355;font-size:11px;color:#ded7e3}
+.season-rank-row:last-child{border-bottom:0}
+.season-rank-number{color:#e8c77f;font-weight:900}
+@media(max-width:360px){.club-level-list{grid-template-columns:1fr}.season-rewards{grid-template-columns:1fr}.club-hero{padding:17px}}
