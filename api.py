@@ -1891,6 +1891,14 @@ async def review_image(filename: str):
     return FileResponse(target, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    icon = STATIC_DIR / "favicon.svg"
+    if not icon.is_file():
+        raise HTTPException(404, "Favicon not found.")
+    return FileResponse(icon, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
+
+
 @app.get("/")
 async def homepage():
     index = STATIC_DIR / "index.html"
