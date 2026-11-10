@@ -5,7 +5,7 @@ const initData = tg && tg.initData ? tg.initData : '';
 const content = document.getElementById('content');
 const state = {
   user: null, page: 'catalog', categories: [], products: [], cart: {items: [], promos: []},
-  profile: null, club: null, orders: [], promos: [], favorites: [], top: [], topref: [], search: '', category: 0,
+  profile: null, club: null, clubActivities: null, adminClubTasks: [], orders: [], promos: [], favorites: [], top: [], topref: [], search: '', category: 0,
   delivery: 'pickup', reviewOrder: 0, leaderKind: 'buyers', adminTab: 'orders',
   adminProducts: [], adminOrders: [], adminUsers: [], adminPromos: [], adminReviews: [], adminStats: null, adminQuery: '', galleryProductId: 0, galleryIndex: 0
 };
@@ -291,11 +291,17 @@ function renderProfile() {
 }
 
 function renderClub() {
-  const c = state.club || {}, tx = c.transactions || [];
+  const c = state.club || {}, tx = c.transactions || [], activity = state.clubActivities || {};
   const nextText = c.next_level ? ('До ' + c.next_level + ': ещё ' + Math.max(0, Number(c.next_level_orders || 0) - Number(c.completed_orders || 0)) + ' заказов и ' + Math.max(0, Number(c.next_level_points || 0) - Number(c.lifetime_earned || 0)) + ' DCP') : 'Достигнут максимальный уровень';
   const ledger = tx.length ? tx.map(t => '<div class="summary-line"><span><b>' + esc(t.reason) + '</b><div class="item-sub">' + dateText(t.created_at) + ' · Баланс: ' + esc(t.balance_after) + ' DCP</div></span><b class="discount">+' + esc(t.amount) + ' DCP</b></div>').join('') : '<div class="empty">Пока нет операций. DCP начисляются за завершённые заказы.</div>';
+  const tasks = (activity.tasks || []).map(t => '<article class="list-card"><div class="row"><b>' + esc(t.title) + '</b><span class="discount">+' + esc(t.reward) + ' DCP</span></div><div class="item-sub">' + esc(t.description) + ' · ' + (t.period === 'daily' ? 'Ежедневно' : 'Еженедельно') + '</div><div class="item-sub" style="margin-top:8px">' + (t.completed ? '✓ Выполнено' : 'Прогресс: ' + esc(t.progress) + '/' + esc(t.target)) + '</div><div style="height:6px;background:#292431;border-radius:20px;overflow:hidden;margin-top:7px"><div style="height:100%;width:' + Math.min(100, Number(t.progress || 0) / Math.max(1, Number(t.target || 1)) * 100) + '%;background:#a78bfa"></div></div></article>').join('') || '<div class="empty">Активных заданий пока нет.</div>';
+  const achievements = (activity.achievements || []).map(x => '<article class="list-card" style="opacity:' + (x.unlocked ? '1' : '.62') + '"><div class="row"><b>' + esc(x.icon) + ' ' + esc(x.title) + '</b><span class="discount">' + (x.unlocked ? 'ОТКРЫТО' : 'ЗАКРЫТО') + '</span></div><div class="item-sub">' + esc(x.description) + '</div><div class="item-sub" style="margin-top:6px">Награда: +' + esc(x.reward) + ' DCP · ' + (x.reward_type === 'title' ? 'Титул' : 'Значок') + '</div>' + (x.unlocked && x.reward_type === 'title' ? '<button class="small-button" data-action="equip-club-title" data-key="' + esc(x.key) + '" style="margin-top:8px">' + (activity.selected_title === x.key ? 'Установлен' : 'Установить титул') + '</button>' : '') + '</article>').join('');
+  const selectedTitle = (activity.achievements || []).find(x => x.key === activity.selected_title);
   return '<div class="section-head"><div><h1 class="section-title">DSS CLUB</h1><div class="section-sub">Твоя клубная карта</div></div><button class="mini-link" data-action="go" data-page="profile">Назад</button></div>' +
     '<div class="card" style="background:linear-gradient(135deg,#211334,#111019);border:1px solid #59358a;color:#fff"><div class="row" style="justify-content:space-between"><div><div class="eyebrow" style="color:#c4a5fd">DSS CLUB MEMBER</div><div style="font-size:26px;font-weight:800;letter-spacing:1px">' + esc(c.level_title || 'MEMBER') + '</div></div><div style="font-size:34px;color:#c4a5fd">✦</div></div><div style="margin-top:20px;color:#c4a5fd;font-size:12px;letter-spacing:1px">ДОСТУПНЫЙ БАЛАНС</div><div style="font-size:34px;font-weight:800">' + esc(c.balance || 0) + ' <span style="font-size:15px;color:#c4a5fd">DCP</span></div><div class="divider"></div><div class="metric-grid"><div class="metric"><div class="metric-value" style="color:#fff">' + esc(c.lifetime_earned || 0) + '</div><div class="metric-label">Всего заработано DCP</div></div><div class="metric"><div class="metric-value" style="color:#fff">' + esc(c.completed_orders || 0) + '</div><div class="metric-label">Завершено заказов</div></div></div><div class="item-sub" style="color:#d8c8ef;margin-top:10px">' + esc(nextText) + '</div><div style="height:8px;background:#332345;border-radius:20px;overflow:hidden;margin-top:9px"><div style="height:100%;width:' + Math.max(0, Math.min(100, Number(c.progress_percent || 0))) + '%;background:linear-gradient(90deg,#8b5cf6,#d8b4fe);border-radius:20px"></div></div><div class="item-sub" style="color:#a78bfa;margin-top:7px">Прогресс до следующего уровня · ' + Math.max(0, Math.min(100, Number(c.progress_percent || 0))) + '%</div></div>' +
+    '<div class="card"><div class="item-sub">Текущий титул</div><b style="color:#c4b5fd">' + esc(selectedTitle ? selectedTitle.title : 'Без титула') + '</b></div>' +
+    '<div class="section-head"><div><h2 class="section-title">Задания</h2><div class="section-sub">Ежедневные и еженедельные активности</div></div></div>' + tasks +
+    '<div class="section-head"><div><h2 class="section-title">Достижения</h2><div class="section-sub">Собирай значки и клубные титулы</div></div></div>' + (achievements || '<div class="empty">Достижения скоро появятся.</div>') +
     '<div class="section-head"><div><h2 class="section-title">История DCP</h2><div class="section-sub">Последние начисления клуба</div></div></div><div class="card">' + ledger + '</div><div class="item-sub" style="text-align:center;margin:12px 0">DCP — внутренняя бонусная валюта клуба. Не является денежным балансом и не выводится.</div>';
 }
 
@@ -311,7 +317,7 @@ function renderLeaders() {
   return '<div class="section-head"><div><h1 class="section-title">' + title + '</h1><div class="section-sub">Топ-10 участников</div></div></div><div class="tabs"><button class="tab ' + (!refs ? 'active' : '') + '" data-action="leaders" data-kind="buyers">Покупатели</button><button class="tab ' + (refs ? 'active' : '') + '" data-action="leaders" data-kind="refs">Реферы</button></div><div class="card">' + list.map((u, i) => '<div class="item-row"><div class="item-thumb">' + (i + 1) + '</div><div class="item-info"><div class="item-title">' + esc(u.username ? '@' + String(u.username).replace('@', '') : 'Пользователь ' + u.user_id) + '</div><div class="item-sub">ID ' + esc(u.user_id) + '</div></div><b class="discount">' + (refs ? esc(u.value) + ' чел.' : money(u.value)) + '</b></div>').join('') + '</div><button class="secondary full-button" data-action="go" data-page="profile">Назад в профиль</button>';
 }
 function adminTabs() {
-  const tabs = [['orders', 'Заказы'], ['products', 'Товары'], ['users', 'Пользователи'], ['promos', 'Промокоды'], ['reviews', 'Отзывы'], ['stats', 'Статистика'], ['broadcast', 'Рассылка']];
+  const tabs = [['orders', 'Заказы'], ['products', 'Товары'], ['users', 'Пользователи'], ['promos', 'Промокоды'], ['reviews', 'Отзывы'], ['club', 'DSS CLUB'], ['stats', 'Статистика'], ['broadcast', 'Рассылка']];
   return '<div class="tabs">' + tabs.map(t => '<button class="tab ' + (state.adminTab === t[0] ? 'active' : '') + '" data-action="admin-tab" data-tab="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>';
 }
 function renderAdmin() {
@@ -351,6 +357,9 @@ function renderAdmin() {
       }).join('');
   } else if (state.adminTab === 'reviews') {
     body = (state.adminReviews || []).length ? state.adminReviews.map(r => '<article class="list-card"><div class="row"><b>Заказ №' + esc(r.order_id) + '</b><span class="discount">' + '★'.repeat(Number(r.rating || 0)) + '☆'.repeat(5 - Number(r.rating || 0)) + '</span></div><div class="item-sub" style="margin:6px 0 10px">Пользователь ID ' + esc(r.user_id) + ' · ' + dateText(r.published_at) + '</div><p>' + esc(r.text || 'Без текста') + '</p>' + (r.photo_url ? '<img src="' + esc(r.photo_url) + '" alt="Фото к отзыву" loading="lazy" style="display:block;width:100%;max-height:320px;object-fit:contain;background:#111;border-radius:12px;margin-top:10px">' : '') + '</article>').join('') : '<div class="empty">Отзывов пока нет.</div>';
+  } else if (state.adminTab === 'club') {
+    body = '<div class="card"><b>Настройка заданий DSS CLUB</b><p class="item-sub">Включай и отключай задания, меняй цель и награду. Максимум 500 DCP за задание.</p></div>' +
+      (state.adminClubTasks || []).map(t => '<article class="list-card club-task-admin" data-task="' + esc(t.key) + '"><div class="row"><b>' + esc(t.title) + '</b><span class="item-sub">' + (t.period === 'daily' ? 'Ежедневное' : 'Еженедельное') + '</span></div><div class="item-sub">' + esc(t.description) + '</div><div class="form-row" style="margin-top:10px"><div><label class="field-label">Цель</label><input class="field" type="number" min="1" max="100" name="target" value="' + esc(t.target) + '"></div><div><label class="field-label">Награда DCP</label><input class="field" type="number" min="0" max="500" name="reward" value="' + esc(t.reward) + '"></div></div><label class="field-label">Статус</label><select class="field" name="active"><option value="true" ' + (t.active ? 'selected' : '') + '>Включено</option><option value="false" ' + (!t.active ? 'selected' : '') + '>Отключено</option></select><button class="small-button" data-action="save-club-task" style="margin-top:10px">Сохранить</button></article>').join('');
   } else if (state.adminTab === 'stats') {
     const s = state.adminStats;
     body = '<div class="row" style="margin:12px 0"><b>Период</b><select class="field" id="stats-period"><option value="today" ' + ((state.statsPeriod || "30d") === "today" ? "selected" : "") + '>Сегодня</option><option value="yesterday" ' + (state.statsPeriod === "yesterday" ? "selected" : "") + '>Вчера</option><option value="7d" ' + (state.statsPeriod === "7d" ? "selected" : "") + '>7 дней</option><option value="30d" ' + ((state.statsPeriod || "30d") === "30d" ? "selected" : "") + '>30 дней</option><option value="all" ' + (state.statsPeriod === "all" ? "selected" : "") + '>Всё время</option></select></div>' + (s ? '<div class="metric-grid"><div class="metric"><div class="metric-value">' + s.total_users + '</div><div class="metric-label">Пользователей</div></div><div class="metric"><div class="metric-value">' + s.total_orders + '</div><div class="metric-label">Выполнено заказов</div></div><div class="metric"><div class="metric-value">' + s.pending_orders + '</div><div class="metric-label">Заказов в работе</div></div><div class="metric"><div class="metric-value">' + money(s.total_revenue) + '</div><div class="metric-label">Выручка за период</div></div><div class="metric"><div class="metric-value">' + money(s.total_cost) + '</div><div class="metric-label">Себестоимость</div></div><div class="metric"><div class="metric-value">' + (s.gross_profit == null ? '—' : money(s.gross_profit)) + '</div><div class="metric-label">Валовая прибыль</div></div></div><div class="card"><div class="summary-line"><span>За сутки</span><b>' + money(s.revenue_day) + '</b></div><div class="summary-line"><span>За неделю</span><b>' + money(s.revenue_week) + '</b></div><div class="summary-line"><span>Средний чек</span><b>' + money(s.avg_check) + '</b></div><div class="summary-line"><span>Учтено себестоимости</span><b>' + s.cost_coverage + '%</b></div><div class="summary-line"><span>Проданные единицы без закупочной цены</span><b>' + s.untracked_units + '</b></div><div class="divider"></div><b>Топ продаж по количеству</b>' + (s.top_products || []).map((p, i) => '<div class="summary-line"><span>' + (i + 1) + '. ' + esc(p.brand) + ' — ' + esc(p.flavor) + '</span><b>' + p.quantity + ' шт.</b></div>').join('') + '<div class="divider"></div><b>Самые прибыльные товары</b>' + (s.top_profit_products || []).map((p, i) => '<div class="summary-line"><span>' + (i + 1) + '. ' + esc(p.brand) + ' — ' + esc(p.flavor) + '</span><b>' + (p.cost_tracked ? money(p.profit) : "Нет закупки") + '</b></div>').join('') + '</div>' : '<div class="empty">Загружаем статистику…</div>');
@@ -394,13 +403,15 @@ async function loadAdminTab(tab) {
     state.adminPromos = promoData[0]; state.adminProducts = promoData[1];
   }
   if (tab === 'reviews') state.adminReviews = await api('/api/admin/reviews');
+  if (tab === 'club') state.adminClubTasks = await api('/api/admin/club/tasks');
+  if (tab === 'club') state.adminClubTasks = await api('/api/admin/club/tasks');
   if (tab === 'stats') state.adminStats = await api('/api/admin/stats?period=' + encodeURIComponent(state.statsPeriod || '30d'));
 }
 async function loadPage(page) {
   if (page === 'orders') state.orders = await api('/api/orders');
   if (page === 'favorites') state.favorites = await api('/api/favorites');
   if (page === 'profile') state.profile = await api('/api/profile');
-  if (page === 'club') state.club = await api('/api/club');
+  if (page === 'club') { const data = await Promise.all([api('/api/club'), api('/api/club/activities')]); state.club = data[0]; state.clubActivities = data[1]; }
   if (page === 'promos') state.promos = await api('/api/promos');
   if (page === 'leaders') {
     const data = await api(state.leaderKind === 'refs' ? '/api/topref' : '/api/top');
@@ -490,6 +501,18 @@ async function action(button) {
   }
   if (name === 'admin-tab') { try { await loadAdminTab(button.dataset.tab); render(); } catch (error) { toast(error.message); } return; }
   if (name === 'reload-admin') { try { await loadAdminTab(state.adminTab); render(); } catch (error) { toast(error.message); } return; }
+  if (name === 'equip-club-title') {
+    try { await api('/api/club/title', { method: 'POST', body: JSON.stringify({ title_key: button.dataset.key }) }); state.clubActivities = await api('/api/club/activities'); render(); toast('Титул установлен'); }
+    catch (error) { toast(error.message); }
+    return;
+  }
+  if (name === 'save-club-task') {
+    const card = button.closest('.club-task-admin');
+    const payload = { target: Number(card.querySelector('[name="target"]').value), reward: Number(card.querySelector('[name="reward"]').value), active: card.querySelector('[name="active"]').value === 'true' };
+    try { await api('/api/admin/club/tasks/' + encodeURIComponent(card.dataset.task), { method: 'PUT', body: JSON.stringify(payload) }); await loadAdminTab('club'); render(); toast('Задание DSS CLUB сохранено'); }
+    catch (error) { toast(error.message); }
+    return;
+  }
   if (name === 'save-product') {
     const card = button.closest('.admin-product');
     const costInput = card.querySelector('[name="cost_price"]').value;
