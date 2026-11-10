@@ -26,7 +26,7 @@ from config import (
     REFERRAL_BONUS_PERCENT, REFERRAL_MILESTONE, REFERRAL_MILESTONE_DISCOUNT,
 )
 from database.db import SessionLocal, engine, init_db
-from database.models import CartItem, CartPromo, Category, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User
+from database.models import CartItem, CartPromo, Category, ClubAccount, ClubTransaction, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User
 from image_utils import optimize_product_image
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -652,6 +652,68 @@ async def orders(user: dict = Depends(current_user)):
         return result
 
 
+
+
+CLUB_LEVELS = [
+    {"code": "MEMBER", "title": "MEMBER", "orders": 0, "points": 0},
+    {"code": "ACTIVE", "title": "ACTIVE", "orders": 3, "points": 300},
+    {"code": "PREMIUM", "title": "PREMIUM", "orders": 7, "points": 900},
+    {"code": "VIP", "title": "VIP", "orders": 15, "points": 2000},
+    {"code": "LEGEND", "title": "LEGEND", "orders": 30, "points": 5000},
+]
+
+
+async def _award_club_dcp(session, user_id: int, amount: int, event_key: str, reason: str) -> int:
+    if amount <= 0:
+        return 0
+    exists = (await session.execute(select(ClubTransaction.id).where(ClubTransaction.event_key == event_key))).first()
+    if exists:
+        return 0
+    account = await session.get(ClubAccount, user_id)
+    if account is None:
+        account = ClubAccount(user_id=user_id, balance=0, lifetime_earned=0)
+        session.add(account)
+        await session.flush()
+    account.balance = int(account.balance or 0) + amount
+    account.lifetime_earned = int(account.lifetime_earned or 0) + amount
+    session.add(ClubTransaction(user_id=user_id, event_key=event_key, kind="earn", amount=amount,
+                                balance_after=account.balance, reason=reason))
+    return amount
+
+
+@app.get("/api/club")
+async def club_profile(user: dict = Depends(current_user)):
+    uid = user["id"]
+    async with SessionLocal() as session:
+        account = await session.get(ClubAccount, uid)
+        balance = int(account.balance or 0) if account else 0
+        lifetime = int(account.lifetime_earned or 0) if account else 0
+        orders = int((await session.execute(select(func.count(Order.id)).where(
+            Order.user_id == uid, Order.status == "completed"
+        ))).scalar() or 0)
+        rows = (await session.execute(select(ClubTransaction).where(
+            ClubTransaction.user_id == uid
+        ).order_by(ClubTransaction.created_at.desc(), ClubTransaction.id.desc()).limit(20))).scalars().all()
+    level_index = 0
+    for index, level in enumerate(CLUB_LEVELS):
+        if orders >= level["orders"] and lifetime >= level["points"]:
+            level_index = index
+    current = CLUB_LEVELS[level_index]
+    nxt = CLUB_LEVELS[level_index + 1] if level_index + 1 < len(CLUB_LEVELS) else None
+    progress = 100 if not nxt else round(min(orders / max(nxt["orders"], 1), lifetime / max(nxt["points"], 1)) * 100)
+    return {
+        "balance": balance, "lifetime_earned": lifetime, "completed_orders": orders,
+        "level": current["code"], "level_title": current["title"],
+        "next_level": nxt["code"] if nxt else None,
+        "next_level_orders": nxt["orders"] if nxt else None,
+        "next_level_points": nxt["points"] if nxt else None,
+        "progress_percent": max(0, min(100, progress)),
+        "transactions": [{"id": row.id, "kind": row.kind, "amount": int(row.amount),
+            "balance_after": int(row.balance_after), "reason": row.reason,
+            "created_at": row.created_at.isoformat() if row.created_at else ""} for row in rows]
+    }
+
+
 @app.get("/api/profile")
 async def profile(user: dict = Depends(current_user)):
     uid = user["id"]
@@ -785,22 +847,32 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
         if new_status == "completed":
             if buyer:
                 buyer.balance = float(buyer.balance or 0) + float(order.total)
-                if buyer.referrer_id and not buyer.first_purchase_done:
-                    ref_id = buyer.referrer_id
-                    bonus = round(float(order.total) * REFERRAL_BONUS_PERCENT / 100, 2)
-                    bonus_code = await _create_promo(session, ref_id, "fixed", bonus)
-                    referrer = await session.get(User, ref_id)
-                    milestone_code = None
-                    if referrer:
-                        referrer.referrals_count = int(referrer.referrals_count or 0) + 1
-                        next_at = int(referrer.next_bonus_at or REFERRAL_MILESTONE)
-                        if referrer.referrals_count >= next_at:
-                            milestone_code = await _create_promo(session, ref_id, "percent", REFERRAL_MILESTONE_DISCOUNT)
-                            referrer.next_bonus_at = next_at + REFERRAL_MILESTONE
-                        notifications.append((ref_id, f"🎁 Твой приглашённый завершил первую покупку. Промокод на {int(bonus)} ₽: {bonus_code}"))
-                        if milestone_code:
-                            notifications.append((ref_id, f"🏆 Уже {referrer.referrals_count} купивших рефералов! Промокод на −{REFERRAL_MILESTONE_DISCOUNT}%: {milestone_code}"))
-                buyer.first_purchase_done = True
+                earned = await _award_club_dcp(session, buyer.id, 100, f"order:{order.id}:completed", "Завершённый заказ")
+                if earned:
+                    notifications.append((buyer.id, "💜 DSS CLUB: +100 DCP за завершённый заказ."))
+                if not buyer.first_purchase_done:
+                    first_bonus = await _award_club_dcp(session, buyer.id, 200, f"user:{buyer.id}:first-order", "Бонус за первую покупку")
+                    if first_bonus:
+                        notifications.append((buyer.id, "🎉 DSS CLUB: +200 DCP за первую покупку!"))
+                    if buyer.referrer_id:
+                        ref_id = buyer.referrer_id
+                        referral_fixed = round(float(order.total) * REFERRAL_BONUS_PERCENT / 100, 2)
+                        bonus_code = await _create_promo(session, ref_id, "fixed", referral_fixed)
+                        referrer = await session.get(User, ref_id)
+                        milestone_code = None
+                        if referrer:
+                            referrer.referrals_count = int(referrer.referrals_count or 0) + 1
+                            referral_dcp = await _award_club_dcp(session, ref_id, 150, f"referral:first-order:{buyer.id}", "Приглашённый завершил первую покупку")
+                            if referral_dcp:
+                                notifications.append((ref_id, "👥 DSS CLUB: +150 DCP — приглашённый совершил первую покупку."))
+                            next_at = int(referrer.next_bonus_at or REFERRAL_MILESTONE)
+                            if referrer.referrals_count >= next_at:
+                                milestone_code = await _create_promo(session, ref_id, "percent", REFERRAL_MILESTONE_DISCOUNT)
+                                referrer.next_bonus_at = next_at + REFERRAL_MILESTONE
+                            notifications.append((ref_id, f"🎁 Твой приглашённый завершил первую покупку. Промокод на {int(referral_fixed)} ₽: {bonus_code}"))
+                            if milestone_code:
+                                notifications.append((ref_id, f"🏆 Уже {referrer.referrals_count} купивших рефералов! Промокод на −{REFERRAL_MILESTONE_DISCOUNT}%: {milestone_code}"))
+                    buyer.first_purchase_done = True
             if order.promo_codes:
                 for code in filter(None, order.promo_codes.split(",")):
                     promo = await session.get(Promocode, code)
