@@ -449,6 +449,9 @@ async def _cart(uid: int) -> dict:
         applied_points = min(stored_points, balance, max_points) if not codes else 0
         applied_points = (applied_points // CLUB_DCP_PER_RUBLE) * CLUB_DCP_PER_RUBLE
         max_points = (min(balance, max_points) // CLUB_DCP_PER_RUBLE) * CLUB_DCP_PER_RUBLE
+        if redemption and int(redemption.points or 0) != applied_points:
+            redemption.points = applied_points
+            await session.commit()
         club_discount = round(applied_points / CLUB_DCP_PER_RUBLE, 2)
         totals = _totals(items, promos)
         if applied_points:
@@ -735,7 +738,8 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
     await bot.notify_admin(notice, order.id)
     return {"id": order.id, "order_number": f"DSS-{order.id:06d}", "total": float(order.total), "status": order.status, "delivery_type": order.delivery_type,
         "delivery_name": order.delivery_name, "delivery_phone": order.delivery_phone, "delivery_address": order.delivery_address,
-        "created_at": order.created_at.isoformat() if order.created_at else "", "items": items, "delivery_price": delivery_price}
+        "created_at": order.created_at.isoformat() if order.created_at else "", "items": items, "delivery_price": delivery_price,
+        "dcp_spent": dcp_spent, "club_discount": club_discount}
 
 
 async def _order_items(session, order_id: int) -> list[dict]:
