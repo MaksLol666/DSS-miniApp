@@ -411,7 +411,7 @@ async function loadPage(page) {
   if (page === 'orders') state.orders = await api('/api/orders');
   if (page === 'favorites') state.favorites = await api('/api/favorites');
   if (page === 'profile') state.profile = await api('/api/profile');
-  if (page === 'club') { const data = await Promise.all([api('/api/club'), api('/api/club/activities')]); state.club = data[0]; state.clubActivities = data[1]; }
+  if (page === 'club') { state.clubActivities = await api('/api/club/activities'); state.club = await api('/api/club'); }
   if (page === 'promos') state.promos = await api('/api/promos');
   if (page === 'leaders') {
     const data = await api(state.leaderKind === 'refs' ? '/api/topref' : '/api/top');
