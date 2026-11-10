@@ -26,7 +26,7 @@ from config import (
     REFERRAL_BONUS_PERCENT, REFERRAL_MILESTONE, REFERRAL_MILESTONE_DISCOUNT,
 )
 from database.db import SessionLocal, engine, init_db
-from database.models import CartItem, CartPromo, Category, ClubAccount, ClubAchievementUnlock, ClubTaskConfig, ClubTaskProgress, ClubTitleSelection, ClubTransaction, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User
+from database.models import CartClubRedemption, CartItem, CartPromo, Category, ClubAccount, ClubAchievementUnlock, ClubTaskConfig, ClubTaskProgress, ClubTitleSelection, ClubTransaction, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User
 from image_utils import optimize_product_image
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -37,6 +37,9 @@ PRIVATE_KEY = os.getenv("DDOS_GUARD_SECRET_KEY", "").strip()
 VERIFY_URL = os.getenv("DDOS_GUARD_VERIFY_URL", "https://captcha.ddos-guard.net/siteverify").strip()
 SESSION_SECRET = os.getenv("DDOS_GUARD_SESSION_SECRET", "").strip()
 SESSION_TTL = max(3600, int(os.getenv("DDOS_GUARD_SESSION_TTL_SECONDS", "2592000")))
+CLUB_DCP_PER_RUBLE = 20
+CLUB_MAX_DISCOUNT_PERCENT = 5
+CLUB_MIN_ORDER = 500
 COOKIE_NAME = "ddg_captcha_session"
 INIT_DATA_MAX_AGE = max(60, int(os.getenv("TELEGRAM_INIT_DATA_MAX_AGE_SECONDS", "86400")))
 RATE_WINDOW = max(5, int(os.getenv("SECURITY_RATE_WINDOW_SECONDS", "30")))
@@ -187,6 +190,10 @@ class CheckoutInput(BaseModel):
     delivery_address: str | None = Field(default=None, max_length=512)
 
 
+class ClubRedeemInput(BaseModel):
+    points: int = Field(ge=0, le=100000000)
+
+
 class ReviewInput(BaseModel):
     order_id: int = Field(gt=0)
     rating: int = Field(ge=1, le=5)
@@ -203,6 +210,8 @@ async def _migrate_legacy_columns() -> None:
         ("orders", "delivery_name", "TEXT"),
         ("orders", "delivery_phone", "TEXT"),
         ("orders", "delivery_address", "TEXT"),
+        ("orders", "dcp_spent", "INTEGER DEFAULT 0"),
+        ("orders", "club_discount", "REAL DEFAULT 0"),
         ("users", "is_banned", "INTEGER DEFAULT 0"),
         ("users", "is_unreachable", "INTEGER DEFAULT 0"),
     ]
@@ -418,13 +427,41 @@ def _totals(items: list[dict], promos: list[Promocode]) -> dict:
     }
 
 
+def _club_max_redeemable_points(subtotal: float) -> int:
+    if subtotal + 0.001 < CLUB_MIN_ORDER:
+        return 0
+    max_discount_rubles = int(float(subtotal) * CLUB_MAX_DISCOUNT_PERCENT / 100 + 1e-8)
+    return max_discount_rubles * CLUB_DCP_PER_RUBLE
+
+
 async def _cart(uid: int) -> dict:
     async with SessionLocal() as session:
         rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == uid).order_by(CartItem.id))).all()
         items = [{"product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0)} for item, p in rows]
         codes = await _promo_codes(session, uid)
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
-        return {"items": items, **_totals(items, promos), "promos": [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "target_type": p.target_type, "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": _promo_datetime_to_local(p.starts_at), "expires_at": _promo_datetime_to_local(p.expires_at), "applicable": not p.used and int(p.used_count or 0) < int(p.max_uses or 1) and _promo_is_active(p) and sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items) + 0.001 >= float(p.min_order or 0) and any(_promo_matches_item(p, i) for i in items)} for p in promos]}
+        account = await session.get(ClubAccount, uid)
+        balance = int(account.balance or 0) if account else 0
+        redemption = await session.get(CartClubRedemption, uid)
+        subtotal = round(sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items), 2)
+        stored_points = int(redemption.points or 0) if redemption else 0
+        max_points = _club_max_redeemable_points(subtotal)
+        applied_points = min(stored_points, balance, max_points) if not codes else 0
+        applied_points = (applied_points // CLUB_DCP_PER_RUBLE) * CLUB_DCP_PER_RUBLE
+        max_points = (min(balance, max_points) // CLUB_DCP_PER_RUBLE) * CLUB_DCP_PER_RUBLE
+        club_discount = round(applied_points / CLUB_DCP_PER_RUBLE, 2)
+        totals = _totals(items, promos)
+        if applied_points:
+            totals["total"] = round(max(0, subtotal - club_discount), 2)
+            totals["percent_discount_amount"] = 0
+            totals["fixed_discount"] = 0
+        if not items and redemption:
+            await session.delete(redemption)
+            await session.commit()
+        return {"items": items, **totals, "promos": [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "target_type": p.target_type, "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": _promo_datetime_to_local(p.starts_at), "expires_at": _promo_datetime_to_local(p.expires_at), "applicable": not p.used and int(p.used_count or 0) < int(p.max_uses or 1) and _promo_is_active(p) and subtotal + 0.001 >= float(p.min_order or 0) and any(_promo_matches_item(p, i) for i in items)} for p in promos],
+            "club_balance": balance, "club_points": applied_points, "club_discount": club_discount,
+            "club_max_points": max_points, "club_min_order": CLUB_MIN_ORDER,
+            "club_dcp_per_ruble": CLUB_DCP_PER_RUBLE, "club_max_discount_percent": CLUB_MAX_DISCOUNT_PERCENT}
 
 
 @app.get("/api/categories")
@@ -527,6 +564,49 @@ async def cart_clear(user: dict = Depends(current_user)):
     return await _cart(user["id"])
 
 
+@app.post("/api/club/redeem")
+async def club_redeem(data: ClubRedeemInput, user: dict = Depends(current_user)):
+    uid = user["id"]
+    async with SessionLocal() as session:
+        if data.points == 0:
+            await session.execute(delete(CartClubRedemption).where(CartClubRedemption.user_id == uid))
+            await session.commit()
+            return await _cart(uid)
+        codes = await _promo_codes(session, uid)
+        if codes:
+            raise HTTPException(409, "DCP нельзя совмещать с обычными промокодами. Убери промокоды из корзины.")
+        rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == uid))).all()
+        if not rows:
+            raise HTTPException(400, "Сначала добавь товары в корзину.")
+        subtotal = sum(float(p.price) * int(item.quantity or 1) for item, p in rows)
+        if subtotal + 0.001 < CLUB_MIN_ORDER:
+            raise HTTPException(400, f"Для списания DCP сумма товаров должна быть не менее {CLUB_MIN_ORDER} ₽.")
+        if data.points % CLUB_DCP_PER_RUBLE:
+            raise HTTPException(400, f"Количество DCP должно быть кратно {CLUB_DCP_PER_RUBLE}.")
+        account = await session.get(ClubAccount, uid)
+        balance = int(account.balance or 0) if account else 0
+        if data.points > balance:
+            raise HTTPException(409, "Недостаточно DCP на балансе.")
+        max_points = _club_max_redeemable_points(subtotal)
+        if data.points > max_points:
+            raise HTTPException(400, f"На этот заказ можно списать не более {max_points} DCP (5% от суммы товаров).")
+        redemption = await session.get(CartClubRedemption, uid)
+        if redemption is None:
+            session.add(CartClubRedemption(user_id=uid, points=data.points))
+        else:
+            redemption.points = data.points
+        await session.commit()
+    return await _cart(uid)
+
+
+@app.post("/api/club/redeem/remove")
+async def club_redeem_remove(user: dict = Depends(current_user)):
+    async with SessionLocal() as session:
+        await session.execute(delete(CartClubRedemption).where(CartClubRedemption.user_id == user["id"]))
+        await session.commit()
+    return await _cart(user["id"])
+
+
 @app.post("/api/promo/apply")
 async def apply_promo(data: dict, user: dict = Depends(current_user)):
     code = str(data.get("code", "")).strip().upper()
@@ -541,6 +621,9 @@ async def apply_promo(data: dict, user: dict = Depends(current_user)):
         if not cart_items:
             raise HTTPException(400, "Сначала добавь товары в корзину.")
         _validate_promo_for_items(promo, cart_items)
+        redemption = await session.get(CartClubRedemption, user["id"])
+        if redemption and int(redemption.points or 0) > 0:
+            raise HTTPException(409, "Сначала отключи списание DCP — клубная скидка не совмещается с промокодами.")
         if promo.owner_id not in (0, user["id"], ADMIN_ID):
             raise HTTPException(403, "Этот промокод выдан другому пользователю.")
         codes = await _promo_codes(session, user["id"])
@@ -600,9 +683,28 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
                 raise HTTPException(403, "Один из промокодов выдан другому пользователю.")
             _validate_promo_for_items(promo, items)
         totals = _totals(items, promos)
+        redemption = await session.get(CartClubRedemption, user["id"])
+        dcp_spent = int(redemption.points or 0) if redemption else 0
+        club_discount = 0.0
+        account = None
+        if dcp_spent:
+            if codes:
+                raise HTTPException(409, "DCP нельзя совмещать с обычными промокодами.")
+            if totals["subtotal"] + 0.001 < CLUB_MIN_ORDER:
+                raise HTTPException(400, f"Для списания DCP сумма товаров должна быть не менее {CLUB_MIN_ORDER} ₽.")
+            if dcp_spent % CLUB_DCP_PER_RUBLE or dcp_spent > _club_max_redeemable_points(totals["subtotal"]):
+                raise HTTPException(409, "Размер клубной скидки изменился. Обнови корзину и выбери DCP заново.")
+            account = await session.get(ClubAccount, user["id"])
+            if account is None or int(account.balance or 0) < dcp_spent:
+                raise HTTPException(409, "Недостаточно DCP на балансе. Обнови корзину.")
+            club_discount = round(dcp_spent / CLUB_DCP_PER_RUBLE, 2)
+            totals["total"] = round(max(0, totals["subtotal"] - club_discount), 2)
+            totals["percent_discount_amount"] = 0
+            totals["fixed_discount"] = 0
         delivery_price = DELIVERY_PRICE if data.delivery_type == "cdek" else 0
         final = round(totals["total"] + delivery_price, 2)
         order = Order(user_id=user["id"], total=final, status="accepted", promo_codes=",".join(codes) if codes else None,
+            dcp_spent=dcp_spent, club_discount=club_discount,
             delivery_type=data.delivery_type, delivery_name=data.delivery_name.strip() if data.delivery_name else None,
             delivery_phone=data.delivery_phone.strip() if data.delivery_phone else None,
             delivery_address=data.delivery_address.strip() if data.delivery_address else None)
@@ -618,13 +720,18 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
             p.in_stock = p.stock_qty > 0
         await session.execute(delete(CartItem).where(CartItem.user_id == user["id"]))
         await session.execute(delete(CartPromo).where(CartPromo.user_id == user["id"]))
+        await session.execute(delete(CartClubRedemption).where(CartClubRedemption.user_id == user["id"]))
+        if dcp_spent:
+            account.balance = int(account.balance or 0) - dcp_spent
+            session.add(ClubTransaction(user_id=user["id"], event_key=f"order:{order.id}:club-spend", kind="spend", amount=-dcp_spent,
+                balance_after=account.balance, reason=f"Скидка DSS CLUB по заказу DSS-{order.id:06d}"))
         await session.commit()
         await session.refresh(order)
         record = await session.get(User, user["id"])
         username = record.username if record else user.get("username")
     item_text = "\n".join(f"• {item['brand']} — {item['flavor']} × {item['quantity']} — {int(item['price'])} ₽/шт." for item in items)
     receive = "Самовывоз" if data.delivery_type == "pickup" else f"СДЭК: {data.delivery_name}, {data.delivery_phone}, {data.delivery_address} (+{DELIVERY_PRICE} ₽)"
-    notice = f"🆕 Новый заказ DSS-{order.id:06d}\nПользователь: {username or user['id']} (ID {user['id']})\n\n{item_text}\n\nСумма товаров: {int(totals['subtotal'])} ₽\nСкидка: {totals['percent_discount']}% и {int(totals['fixed_discount'])} ₽\nПолучение: {receive}\nПромокоды: {', '.join(codes) if codes else 'нет'}\nК оплате: {int(final)} ₽\n\nОткрой /admin в боте, чтобы обработать заказ."
+    notice = f"🆕 Новый заказ DSS-{order.id:06d}\nПользователь: {username or user['id']} (ID {user['id']})\n\n{item_text}\n\nСумма товаров: {int(totals['subtotal'])} ₽\nСкидка: {totals['percent_discount']}% и {int(totals['fixed_discount'])} ₽\nСкидка DSS CLUB: {int(club_discount)} ₽ ({dcp_spent} DCP)\nПолучение: {receive}\nПромокоды: {', '.join(codes) if codes else 'нет'}\nК оплате: {int(final)} ₽\n\nОткрой /admin в боте, чтобы обработать заказ."
     await bot.notify_admin(notice, order.id)
     return {"id": order.id, "order_number": f"DSS-{order.id:06d}", "total": float(order.total), "status": order.status, "delivery_type": order.delivery_type,
         "delivery_name": order.delivery_name, "delivery_phone": order.delivery_phone, "delivery_address": order.delivery_address,
@@ -647,6 +754,7 @@ async def orders(user: dict = Depends(current_user)):
             result.append({"id": o.id, "order_number": f"DSS-{o.id:06d}", "total": float(o.total), "status": o.status, "delivery_type": o.delivery_type,
                 "delivery_name": o.delivery_name, "delivery_phone": o.delivery_phone, "delivery_address": o.delivery_address,
                 "created_at": o.created_at.isoformat() if o.created_at else "", "items": await _order_items(session, o.id),
+                "dcp_spent": int(o.dcp_spent or 0), "club_discount": float(o.club_discount or 0),
                 "status_history": [{"status": h.status, "changed_at": h.created_at.isoformat() if h.created_at else "", "note": h.note or ""} for h in history],
                 "has_review": o.id in reviewed})
         return result
@@ -1013,6 +1121,20 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
             for order_item, product in items:
                 product.stock_qty = int(product.stock_qty or 0) + int(order_item.quantity or 1)
                 product.in_stock = product.stock_qty > 0
+            if int(order.dcp_spent or 0) > 0 and buyer:
+                refund_key = f"order:{order.id}:club-refund"
+                already_refunded = (await session.execute(select(ClubTransaction.id).where(ClubTransaction.event_key == refund_key))).first()
+                if not already_refunded:
+                    account = await session.get(ClubAccount, buyer.id)
+                    if account is None:
+                        account = ClubAccount(user_id=buyer.id, balance=0, lifetime_earned=0)
+                        session.add(account)
+                        await session.flush()
+                    refund_points = int(order.dcp_spent)
+                    account.balance = int(account.balance or 0) + refund_points
+                    session.add(ClubTransaction(user_id=buyer.id, event_key=refund_key, kind="refund", amount=refund_points,
+                        balance_after=account.balance, reason=f"Возврат DCP за отклонённый заказ DSS-{order.id:06d}"))
+                    notifications.append((buyer.id, f"↩️ DSS CLUB: возвращено {refund_points} DCP за отклонённый заказ."))
         if new_status == "completed":
             if buyer:
                 buyer.balance = float(buyer.balance or 0) + float(order.total)
