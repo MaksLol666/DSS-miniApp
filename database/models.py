@@ -131,6 +131,29 @@ class CartPromo(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+
+
+class ClubAccount(Base):
+    __tablename__ = "club_accounts"
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), primary_key=True)
+    balance: Mapped[int] = mapped_column(Integer, default=0)
+    lifetime_earned: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ClubTransaction(Base):
+    __tablename__ = "club_transactions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
+    event_key: Mapped[str] = mapped_column(String(128), unique=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    amount: Mapped[int] = mapped_column(Integer)
+    balance_after: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Review(Base):
     __tablename__ = "reviews"
     id: Mapped[int] = mapped_column(primary_key=True)
