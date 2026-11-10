@@ -2,7 +2,7 @@ name: Validate DSS Mini App
 
 on:
   push:
-    branches: [main, rewrite-v2]
+    branches: [main, rewrite-v2, fix/club-dcp-fixed-discounts]
   workflow_dispatch:
 
 permissions:
