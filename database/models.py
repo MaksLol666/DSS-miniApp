@@ -154,6 +154,46 @@ class ClubTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class ClubAchievementUnlock(Base):
+    __tablename__ = "club_achievement_unlocks"
+    __table_args__ = (UniqueConstraint("user_id", "achievement_key", name="uq_club_achievement_user_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
+    achievement_key: Mapped[str] = mapped_column(String(48))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ClubTaskConfig(Base):
+    __tablename__ = "club_task_configs"
+    key: Mapped[str] = mapped_column(String(48), primary_key=True)
+    title: Mapped[str] = mapped_column(String(96))
+    description: Mapped[str] = mapped_column(String(256))
+    period: Mapped[str] = mapped_column(String(12))
+    event_type: Mapped[str] = mapped_column(String(24))
+    target: Mapped[int] = mapped_column(Integer, default=1)
+    reward: Mapped[int] = mapped_column(Integer, default=30)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ClubTaskProgress(Base):
+    __tablename__ = "club_task_progress"
+    __table_args__ = (UniqueConstraint("user_id", "task_key", "period_key", name="uq_club_task_user_period"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
+    task_key: Mapped[str] = mapped_column(String(48))
+    period_key: Mapped[str] = mapped_column(String(16))
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    claimed: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ClubTitleSelection(Base):
+    __tablename__ = "club_title_selections"
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), primary_key=True)
+    title_key: Mapped[str] = mapped_column(String(48))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class Review(Base):
     __tablename__ = "reviews"
     id: Mapped[int] = mapped_column(primary_key=True)
