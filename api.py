@@ -26,7 +26,7 @@ from config import (
     REFERRAL_BONUS_PERCENT, REFERRAL_MILESTONE, REFERRAL_MILESTONE_DISCOUNT,
 )
 from database.db import SessionLocal, engine, init_db
-from database.models import CartItem, CartPromo, Category, ClubAccount, ClubTransaction, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User
+from database.models import CartItem, CartPromo, Category, ClubAccount, ClubAchievementUnlock, ClubTaskConfig, ClubTaskProgress, ClubTitleSelection, ClubTransaction, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User
 from image_utils import optimize_product_image
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -681,6 +681,173 @@ async def _award_club_dcp(session, user_id: int, amount: int, event_key: str, re
     return amount
 
 
+
+CLUB_ACHIEVEMENTS = [
+    {"key": "first_order", "title": "FIRST STEP", "description": "Заверши свой первый заказ", "icon": "🛍️", "metric": "orders", "target": 1, "reward": 100, "reward_type": "badge"},
+    {"key": "five_orders", "title": "REGULAR", "description": "Заверши 5 заказов", "icon": "⭐", "metric": "orders", "target": 5, "reward": 250, "reward_type": "title"},
+    {"key": "ten_orders", "title": "LOYAL", "description": "Заверши 10 заказов", "icon": "💜", "metric": "orders", "target": 10, "reward": 500, "reward_type": "badge"},
+    {"key": "twenty_five_orders", "title": "VETERAN", "description": "Заверши 25 заказов", "icon": "🏆", "metric": "orders", "target": 25, "reward": 1000, "reward_type": "title"},
+    {"key": "first_referral", "title": "CONNECTOR", "description": "Пригласи друга, который завершит заказ", "icon": "🤝", "metric": "referrals", "target": 1, "reward": 150, "reward_type": "badge"},
+    {"key": "five_referrals", "title": "AMBASSADOR", "description": "Получи 5 завершивших покупку рефералов", "icon": "👑", "metric": "referrals", "target": 5, "reward": 500, "reward_type": "title"},
+    {"key": "first_review", "title": "YOUR VOICE", "description": "Опубликуй первый одобренный отзыв", "icon": "✍️", "metric": "reviews", "target": 1, "reward": 100, "reward_type": "badge"},
+]
+DEFAULT_CLUB_TASKS = [
+    {"key": "daily_order", "title": "DAILY CHECK", "description": "Заверши 1 заказ за день", "period": "daily", "event_type": "orders", "target": 1, "reward": 30, "active": True},
+    {"key": "weekly_orders", "title": "WEEKLY GRIND", "description": "Заверши 2 заказа за неделю", "period": "weekly", "event_type": "orders", "target": 2, "reward": 100, "active": True},
+]
+
+
+async def _ensure_club_tasks(session):
+    for item in DEFAULT_CLUB_TASKS:
+        if await session.get(ClubTaskConfig, item["key"]) is None:
+            session.add(ClubTaskConfig(**item))
+    await session.flush()
+
+
+async def _club_metrics(session, user_id: int) -> dict:
+    orders = int((await session.execute(select(func.count(Order.id)).where(Order.user_id == user_id, Order.status == "completed"))).scalar() or 0)
+    referrals = int((await session.execute(select(func.count(User.id)).where(User.referrer_id == user_id, User.first_purchase_done.is_(True)))).scalar() or 0)
+    reviews = int((await session.execute(select(func.count(Review.id)).where(Review.user_id == user_id, Review.status == "approved"))).scalar() or 0)
+    return {"orders": orders, "referrals": referrals, "reviews": reviews}
+
+
+async def _sync_club_achievements(session, user_id: int) -> list[str]:
+    metrics = await _club_metrics(session, user_id)
+    messages = []
+    for item in CLUB_ACHIEVEMENTS:
+        if metrics[item["metric"]] < item["target"]:
+            continue
+        exists = (await session.execute(select(ClubAchievementUnlock.id).where(
+            ClubAchievementUnlock.user_id == user_id, ClubAchievementUnlock.achievement_key == item["key"]
+        ))).first()
+        if exists:
+            continue
+        session.add(ClubAchievementUnlock(user_id=user_id, achievement_key=item["key"]))
+        await session.flush()
+        amount = await _award_club_dcp(session, user_id, item["reward"], f"achievement:{item['key']}:{user_id}", f"Достижение: {item['title']}")
+        messages.append(f"🏆 Достижение открыто: {item['title']} · +{amount} DCP")
+    return messages
+
+
+def _club_period(task, now):
+    if task.period == "daily":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start, start.strftime("%Y-%m-%d")
+    start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    return start, start.strftime("%G-W%V")
+
+
+async def _club_task_count(session, user_id: int, task, start) -> int:
+    value = (await session.execute(
+        select(func.count(func.distinct(OrderStatusHistory.order_id)))
+        .join(Order, Order.id == OrderStatusHistory.order_id)
+        .where(Order.user_id == user_id, OrderStatusHistory.status == "completed", OrderStatusHistory.created_at >= start)
+    )).scalar() or 0
+    return int(value)
+
+
+async def _sync_club_tasks(session, user_id: int) -> list[str]:
+    await _ensure_club_tasks(session)
+    now = datetime.utcnow()
+    messages = []
+    tasks = (await session.execute(select(ClubTaskConfig).where(ClubTaskConfig.active.is_(True)))).scalars().all()
+    for task in tasks:
+        start, period_key = _club_period(task, now)
+        count = await _club_task_count(session, user_id, task, start)
+        progress = (await session.execute(select(ClubTaskProgress).where(
+            ClubTaskProgress.user_id == user_id, ClubTaskProgress.task_key == task.key, ClubTaskProgress.period_key == period_key
+        ))).scalar_one_or_none()
+        if progress is None:
+            progress = ClubTaskProgress(user_id=user_id, task_key=task.key, period_key=period_key, progress=0, claimed=False)
+            session.add(progress)
+            await session.flush()
+        progress.progress = min(count, int(task.target))
+        if progress.progress >= int(task.target) and not progress.claimed:
+            progress.claimed = True
+            amount = await _award_club_dcp(session, user_id, int(task.reward),
+                f"task:{task.key}:{period_key}:{user_id}", f"Задание: {task.title}")
+            messages.append(f"🎯 Задание выполнено: {task.title} · +{amount} DCP")
+    return messages
+
+
+async def _sync_club_activity(session, user_id: int) -> list[str]:
+    messages = await _sync_club_achievements(session, user_id)
+    messages.extend(await _sync_club_tasks(session, user_id))
+    return messages
+
+
+@app.get("/api/club/activities")
+async def club_activities(user: dict = Depends(current_user)):
+    uid = user["id"]
+    async with SessionLocal() as session:
+        await _ensure_club_tasks(session)
+        await _sync_club_achievements(session, uid)
+        await _sync_club_tasks(session, uid)
+        selected = await session.get(ClubTitleSelection, uid)
+        unlocked = set((await session.execute(select(ClubAchievementUnlock.achievement_key).where(ClubAchievementUnlock.user_id == uid))).scalars().all())
+        tasks = (await session.execute(select(ClubTaskConfig).where(ClubTaskConfig.active.is_(True)))).scalars().all()
+        task_data = []
+        for task in tasks:
+            start, _period_key = _club_period(task, datetime.utcnow())
+            count = await _club_task_count(session, uid, task, start)
+            task_data.append({"key": task.key, "title": task.title, "description": task.description, "period": task.period,
+                "target": int(task.target), "reward": int(task.reward), "progress": min(count, int(task.target)), "completed": count >= int(task.target)})
+        await session.commit()
+        return {"achievements": [{**item, "unlocked": item["key"] in unlocked} for item in CLUB_ACHIEVEMENTS],
+                "tasks": task_data, "selected_title": selected.title_key if selected else None}
+
+
+@app.post("/api/club/title")
+async def club_select_title(data: dict, user: dict = Depends(current_user)):
+    key = str(data.get("title_key", "")).strip()
+    allowed = {item["key"] for item in CLUB_ACHIEVEMENTS if item["reward_type"] == "title"}
+    if key not in allowed:
+        raise HTTPException(400, "Неизвестный клубный титул.")
+    async with SessionLocal() as session:
+        unlocked = (await session.execute(select(ClubAchievementUnlock.id).where(
+            ClubAchievementUnlock.user_id == user["id"], ClubAchievementUnlock.achievement_key == key
+        ))).first()
+        if not unlocked:
+            raise HTTPException(403, "Сначала открой это достижение.")
+        selection = await session.get(ClubTitleSelection, user["id"])
+        if selection is None:
+            session.add(ClubTitleSelection(user_id=user["id"], title_key=key))
+        else:
+            selection.title_key = key
+        await session.commit()
+    return {"ok": True, "selected_title": key}
+
+
+@app.get("/api/admin/club/tasks")
+async def admin_club_tasks(user: dict = Depends(admin_user)):
+    async with SessionLocal() as session:
+        await _ensure_club_tasks(session)
+        rows = (await session.execute(select(ClubTaskConfig).order_by(ClubTaskConfig.period, ClubTaskConfig.key))).scalars().all()
+        return [{"key": t.key, "title": t.title, "description": t.description, "period": t.period, "target": int(t.target), "reward": int(t.reward), "active": bool(t.active)} for t in rows]
+
+
+@app.put("/api/admin/club/tasks/{task_key}")
+async def admin_club_task_update(task_key: str, data: dict, user: dict = Depends(admin_user)):
+    async with SessionLocal() as session:
+        task = await session.get(ClubTaskConfig, task_key)
+        if not task:
+            raise HTTPException(404, "Задание не найдено.")
+        if "reward" in data:
+            reward = int(data["reward"])
+            if reward < 0 or reward > 500:
+                raise HTTPException(400, "Награда должна быть от 0 до 500 DCP.")
+            task.reward = reward
+        if "target" in data:
+            target = int(data["target"])
+            if target < 1 or target > 100:
+                raise HTTPException(400, "Цель должна быть от 1 до 100.")
+            task.target = target
+        if "active" in data:
+            task.active = bool(data["active"])
+        await session.commit()
+        return {"ok": True}
+
+
 @app.get("/api/club")
 async def club_profile(user: dict = Depends(current_user)):
     uid = user["id"]
@@ -873,6 +1040,10 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                             if milestone_code:
                                 notifications.append((ref_id, f"🏆 Уже {referrer.referrals_count} купивших рефералов! Промокод на −{REFERRAL_MILESTONE_DISCOUNT}%: {milestone_code}"))
                     buyer.first_purchase_done = True
+                await session.flush()
+                notifications.extend((buyer.id, msg) for msg in await _sync_club_activity(session, buyer.id))
+                if buyer.referrer_id:
+                    notifications.extend((buyer.referrer_id, msg) for msg in await _sync_club_activity(session, buyer.referrer_id))
             if order.promo_codes:
                 for code in filter(None, order.promo_codes.split(",")):
                     promo = await session.get(Promocode, code)
