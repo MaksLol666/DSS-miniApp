@@ -81,6 +81,8 @@ class Order(Base):
     delivery_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     delivery_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     delivery_address: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    dcp_spent: Mapped[int] = mapped_column(Integer, default=0)
+    club_discount: Mapped[float] = mapped_column(Float, default=0.0)
 
 
 class OrderStatusHistory(Base):
@@ -129,6 +131,13 @@ class CartPromo(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     code: Mapped[str] = mapped_column(ForeignKey("promocodes.code"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CartClubRedemption(Base):
+    __tablename__ = "cart_club_redemptions"
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    points: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 
