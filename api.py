@@ -37,9 +37,17 @@ PRIVATE_KEY = os.getenv("DDOS_GUARD_SECRET_KEY", "").strip()
 VERIFY_URL = os.getenv("DDOS_GUARD_VERIFY_URL", "https://captcha.ddos-guard.net/siteverify").strip()
 SESSION_SECRET = os.getenv("DDOS_GUARD_SESSION_SECRET", "").strip()
 SESSION_TTL = max(3600, int(os.getenv("DDOS_GUARD_SESSION_TTL_SECONDS", "2592000")))
-CLUB_DCP_PER_RUBLE = 20
-CLUB_MAX_DISCOUNT_PERCENT = 5
+CLUB_DCP_PER_RUBLE = 100
 CLUB_MIN_ORDER = 500
+CLUB_REDEMPTION_TIERS = (
+    (500, 100),
+    (1000, 150),
+    (1500, 250),
+    (3000, 300),
+    (5000, 400),
+    (10000, 500),
+)
+CLUB_MIN_GROSS_PROFIT_PER_UNIT = 250
 COOKIE_NAME = "ddg_captcha_session"
 INIT_DATA_MAX_AGE = max(60, int(os.getenv("TELEGRAM_INIT_DATA_MAX_AGE_SECONDS", "86400")))
 RATE_WINDOW = max(5, int(os.getenv("SECURITY_RATE_WINDOW_SECONDS", "30")))
@@ -427,17 +435,64 @@ def _totals(items: list[dict], promos: list[Promocode]) -> dict:
     }
 
 
-def _club_max_redeemable_points(subtotal: float) -> int:
+def _club_discount_for_cart(items: list[dict], subtotal: float) -> dict:
+    """Return the fixed DCP discount tier and validate eligible product margin."""
+    discount = 0
+    for minimum, amount in CLUB_REDEMPTION_TIERS:
+        if subtotal + 0.001 >= minimum:
+            discount = amount
+        else:
+            break
+
+    eligible_subtotal = 0.0
+    eligible_gross_profit = 0.0
+    for item in items:
+        price = float(item.get("price") or 0)
+        quantity = int(item.get("quantity") or 1)
+        cost_price = item.get("cost_price")
+        if cost_price is None:
+            continue
+        unit_gross_profit = price - float(cost_price)
+        if unit_gross_profit + 0.001 < CLUB_MIN_GROSS_PROFIT_PER_UNIT:
+            continue
+        eligible_subtotal += price * quantity
+        eligible_gross_profit += unit_gross_profit * quantity
+
+    eligible_subtotal = round(eligible_subtotal, 2)
+    eligible_gross_profit = round(eligible_gross_profit, 2)
+    available = bool(
+        discount > 0
+        and eligible_subtotal + 0.001 >= discount
+        and eligible_gross_profit + 0.001 >= discount
+    )
     if subtotal + 0.001 < CLUB_MIN_ORDER:
-        return 0
-    max_discount_rubles = int(float(subtotal) * CLUB_MAX_DISCOUNT_PERCENT / 100 + 1e-8)
-    return max_discount_rubles * CLUB_DCP_PER_RUBLE
+        reason = f"Минимальная сумма корзины для обмена — {CLUB_MIN_ORDER} ₽."
+    elif discount <= 0:
+        reason = "Для этой суммы корзины скидка DCP недоступна."
+    elif eligible_subtotal <= 0:
+        reason = "Нет товаров с исходной валовой прибылью от 250 ₽ за штуку."
+    elif eligible_subtotal + 0.001 < discount or eligible_gross_profit + 0.001 < discount:
+        reason = "Валовой прибыли подходящих товаров недостаточно для этой фиксированной скидки."
+    else:
+        reason = ""
+    return {
+        "discount": discount,
+        "required_points": discount * CLUB_DCP_PER_RUBLE,
+        "eligible_subtotal": eligible_subtotal,
+        "eligible_gross_profit": eligible_gross_profit,
+        "available": available,
+        "reason": reason,
+    }
 
 
 async def _cart(uid: int) -> dict:
     async with SessionLocal() as session:
         rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == uid).order_by(CartItem.id))).all()
-        items = [{"product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0)} for item, p in rows]
+        items = [{
+            "product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor,
+            "price": float(p.price), "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0),
+            "club_eligible": p.cost_price is not None and float(p.price) - float(p.cost_price) + 0.001 >= CLUB_MIN_GROSS_PROFIT_PER_UNIT,
+        } for item, p in rows]
         codes = await _promo_codes(session, uid)
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
         account = await session.get(ClubAccount, uid)
@@ -445,14 +500,17 @@ async def _cart(uid: int) -> dict:
         redemption = await session.get(CartClubRedemption, uid)
         subtotal = round(sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items), 2)
         stored_points = int(redemption.points or 0) if redemption else 0
-        max_points = _club_max_redeemable_points(subtotal)
-        applied_points = min(stored_points, balance, max_points) if not codes else 0
-        applied_points = (applied_points // CLUB_DCP_PER_RUBLE) * CLUB_DCP_PER_RUBLE
-        max_points = (min(balance, max_points) // CLUB_DCP_PER_RUBLE) * CLUB_DCP_PER_RUBLE
+        club_offer = _club_discount_for_cart([
+            {"price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "quantity": int(item.quantity or 1)}
+            for item, p in rows
+        ], subtotal)
+        required_points = int(club_offer["required_points"])
+        can_redeem = bool(club_offer["available"] and balance >= required_points and not codes)
+        applied_points = required_points if can_redeem and stored_points == required_points else 0
         if redemption and int(redemption.points or 0) != applied_points:
             redemption.points = applied_points
             await session.commit()
-        club_discount = round(applied_points / CLUB_DCP_PER_RUBLE, 2)
+        club_discount = float(club_offer["discount"]) if applied_points else 0.0
         totals = _totals(items, promos)
         if applied_points:
             totals["total"] = round(max(0, subtotal - club_discount), 2)
@@ -461,10 +519,25 @@ async def _cart(uid: int) -> dict:
         if not items and redemption:
             await session.delete(redemption)
             await session.commit()
-        return {"items": items, **totals, "promos": [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "target_type": p.target_type, "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": _promo_datetime_to_local(p.starts_at), "expires_at": _promo_datetime_to_local(p.expires_at), "applicable": not p.used and int(p.used_count or 0) < int(p.max_uses or 1) and _promo_is_active(p) and subtotal + 0.001 >= float(p.min_order or 0) and any(_promo_matches_item(p, i) for i in items)} for p in promos],
+        unavailable_reason = (
+            "Сначала убери обычные промокоды: скидка DCP с ними не суммируется."
+            if codes else
+            "Недостаточно DCP: нужно " + str(required_points) + " DCP."
+            if club_offer["available"] and balance < required_points else
+            club_offer["reason"]
+        )
+        return {
+            "items": items, **totals,
+            "promos": [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "target_type": p.target_type, "target_id": p.target_id, "min_order": float(p.min_order or 0), "starts_at": _promo_datetime_to_local(p.starts_at), "expires_at": _promo_datetime_to_local(p.expires_at), "applicable": not p.used and int(p.used_count or 0) < int(p.max_uses or 1) and _promo_is_active(p) and subtotal + 0.001 >= float(p.min_order or 0) and any(_promo_matches_item(p, i) for i in items)} for p in promos],
             "club_balance": balance, "club_points": applied_points, "club_discount": club_discount,
-            "club_max_points": max_points, "club_min_order": CLUB_MIN_ORDER,
-            "club_dcp_per_ruble": CLUB_DCP_PER_RUBLE, "club_max_discount_percent": CLUB_MAX_DISCOUNT_PERCENT}
+            "club_max_points": required_points if can_redeem else 0,
+            "club_required_points": required_points,
+            "club_discount_offer": float(club_offer["discount"]),
+            "club_eligible_subtotal": float(club_offer["eligible_subtotal"]),
+            "club_can_redeem": can_redeem,
+            "club_unavailable_reason": unavailable_reason,
+            "club_min_order": CLUB_MIN_ORDER, "club_dcp_per_ruble": CLUB_DCP_PER_RUBLE,
+        }
 
 
 @app.get("/api/categories")
@@ -581,23 +654,25 @@ async def club_redeem(data: ClubRedeemInput, user: dict = Depends(current_user))
         rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == uid))).all()
         if not rows:
             raise HTTPException(400, "Сначала добавь товары в корзину.")
-        subtotal = sum(float(p.price) * int(item.quantity or 1) for item, p in rows)
-        if subtotal + 0.001 < CLUB_MIN_ORDER:
-            raise HTTPException(400, f"Для списания DCP сумма товаров должна быть не менее {CLUB_MIN_ORDER} ₽.")
-        if data.points % CLUB_DCP_PER_RUBLE:
-            raise HTTPException(400, f"Количество DCP должно быть кратно {CLUB_DCP_PER_RUBLE}.")
+        subtotal = round(sum(float(p.price) * int(item.quantity or 1) for item, p in rows), 2)
+        club_offer = _club_discount_for_cart([
+            {"price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "quantity": int(item.quantity or 1)}
+            for item, p in rows
+        ], subtotal)
+        if not club_offer["available"]:
+            raise HTTPException(400, club_offer["reason"] or "Клубная скидка недоступна для этой корзины.")
+        required_points = int(club_offer["required_points"])
+        if data.points != required_points:
+            raise HTTPException(400, f"Для этой корзины доступна фиксированная скидка {int(club_offer['discount'])} ₽ за {required_points} DCP.")
         account = await session.get(ClubAccount, uid)
         balance = int(account.balance or 0) if account else 0
-        if data.points > balance:
-            raise HTTPException(409, "Недостаточно DCP на балансе.")
-        max_points = _club_max_redeemable_points(subtotal)
-        if data.points > max_points:
-            raise HTTPException(400, f"На этот заказ можно списать не более {max_points} DCP (5% от суммы товаров).")
+        if balance < required_points:
+            raise HTTPException(409, f"Недостаточно DCP. Нужно {required_points} DCP.")
         redemption = await session.get(CartClubRedemption, uid)
         if redemption is None:
-            session.add(CartClubRedemption(user_id=uid, points=data.points))
+            session.add(CartClubRedemption(user_id=uid, points=required_points))
         else:
-            redemption.points = data.points
+            redemption.points = required_points
         await session.commit()
     return await _cart(uid)
 
@@ -676,7 +751,7 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
             requested = int(cart_item.quantity or 1)
             if not p.in_stock or int(p.stock_qty or 0) < requested:
                 raise HTTPException(409, f"Для товара {p.brand} — {p.flavor} доступно {int(p.stock_qty or 0)} шт., в корзине {requested}.")
-        items = [{"product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "quantity": int(cart_item.quantity or 1)} for cart_item, p in rows]
+        items = [{"product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "quantity": int(cart_item.quantity or 1)} for cart_item, p in rows]
         codes = await _promo_codes(session, user["id"])
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
         if len(codes) != len(promos) or any(p.used or p.used_count >= p.max_uses for p in promos):
@@ -693,14 +768,14 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         if dcp_spent:
             if codes:
                 raise HTTPException(409, "DCP нельзя совмещать с обычными промокодами.")
-            if totals["subtotal"] + 0.001 < CLUB_MIN_ORDER:
-                raise HTTPException(400, f"Для списания DCP сумма товаров должна быть не менее {CLUB_MIN_ORDER} ₽.")
-            if dcp_spent % CLUB_DCP_PER_RUBLE or dcp_spent > _club_max_redeemable_points(totals["subtotal"]):
-                raise HTTPException(409, "Размер клубной скидки изменился. Обнови корзину и выбери DCP заново.")
+            club_offer = _club_discount_for_cart(items, totals["subtotal"])
+            required_points = int(club_offer["required_points"])
+            if not club_offer["available"] or dcp_spent != required_points:
+                raise HTTPException(409, "Условия фиксированной скидки DSS CLUB изменились. Обнови корзину.")
             account = await session.get(ClubAccount, user["id"])
-            if account is None or int(account.balance or 0) < dcp_spent:
+            if account is None or int(account.balance or 0) < required_points:
                 raise HTTPException(409, "Недостаточно DCP на балансе. Обнови корзину.")
-            club_discount = round(dcp_spent / CLUB_DCP_PER_RUBLE, 2)
+            club_discount = float(club_offer["discount"])
             totals["total"] = round(max(0, totals["subtotal"] - club_discount), 2)
             totals["percent_discount_amount"] = 0
             totals["fixed_discount"] = 0

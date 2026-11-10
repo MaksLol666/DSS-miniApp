@@ -71,3 +71,74 @@ main{padding-bottom:12px}.hero{position:relative;overflow:hidden;border:1px soli
 .season-rank-row:last-child{border-bottom:0}
 .season-rank-number{color:#e8c77f;font-weight:900}
 @media(max-width:360px){.club-level-list{grid-template-columns:1fr}.season-rewards{grid-template-columns:1fr}.club-hero{padding:17px}}
+
+
+/* DSS CLUB — collectible identity system */
+.club-hero{isolation:isolate;padding:24px 21px 20px;border-color:#5b467b;background:radial-gradient(ellipse at 88% 16%,#a78bfa38,transparent 34%),radial-gradient(ellipse at 8% 100%,#6541a52b,transparent 44%),linear-gradient(135deg,#241a35 0%,#15121e 58%,#101018 100%)}
+.club-hero:after{content:"";display:none}
+.club-hero-orbit{position:absolute;z-index:-1;width:220px;height:220px;right:-85px;top:-100px;border:1px solid #d9c5ff30;border-radius:50%;box-shadow:0 0 0 18px #b99aff0b,0 0 0 40px #b99aff08,0 0 0 62px #b99aff05}
+.club-hero-head{display:flex;justify-content:space-between;align-items:center;gap:12px;position:relative;z-index:1}
+.club-member-caption{font-size:9px;letter-spacing:1.8px;color:#bca9dc;margin-top:7px;font-weight:800}
+.club-hero-seal{width:76px;height:76px;flex:0 0 76px;border:1px solid #b79ae866;border-radius:23px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:linear-gradient(145deg,#594278aa,#1c1729);box-shadow:inset 0 0 22px #b28cff20,0 12px 30px #0005;transform:rotate(4deg)}
+.club-hero-seal span{font-size:37px;line-height:1;color:#e3d2ff;text-shadow:0 0 18px #bd9aff99}
+.club-hero-seal small{font-size:7px;letter-spacing:1.7px;color:#c7b4e8;font-weight:900}
+.club-balance{display:flex;align-items:center;gap:10px}
+.club-currency-icon{width:30px;height:30px;border:1px solid #c7a7ff66;border-radius:50%;display:inline-grid;place-items:center;background:linear-gradient(145deg,#bba0ff,#6544a6);color:#1a1128!important;font-size:15px!important;font-weight:950;letter-spacing:0!important;box-shadow:0 0 18px #a981f555}
+.club-hero-active{border-color:#4e8d79;background:radial-gradient(ellipse at 90% 0%,#62d6aa28,transparent 40%),linear-gradient(135deg,#152d2a,#12171a 65%,#101018)}
+.club-hero-active .club-hero-seal{border-color:#71d4ad66;background:linear-gradient(145deg,#285b4b,#17231f)}
+.club-hero-premium{border-color:#6b61a8;background:radial-gradient(ellipse at 90% 0%,#9b8bff30,transparent 42%),linear-gradient(135deg,#252044,#151421 68%,#101018)}
+.club-hero-vip{border-color:#9a7442;background:radial-gradient(ellipse at 90% 0%,#f5c76c35,transparent 42%),linear-gradient(135deg,#382b1d,#17151b 68%,#101018)}
+.club-hero-vip .club-hero-seal{border-color:#d4ae6b88;background:linear-gradient(145deg,#79552b,#282018)}
+.club-hero-legend{border-color:#9c568b;background:radial-gradient(ellipse at 90% 0%,#f08bdb35,transparent 42%),linear-gradient(135deg,#351c38,#17131e 68%,#101018)}
+.club-hero-ambassador{border-color:#c1a0ff;background:radial-gradient(ellipse at 90% 0%,#d6bdff4a,transparent 45%),linear-gradient(135deg,#39244e,#191421 66%,#101018);box-shadow:0 18px 55px #9b73e51b,inset 0 0 35px #d4b8ff0b}
+.club-hero-ambassador .club-hero-seal{border-color:#e2c8ff;background:linear-gradient(145deg,#9d78cb,#37254d)}
+.club-title-card{display:grid;grid-template-columns:94px minmax(0,1fr);gap:15px;align-items:center;border:1px solid #3d3450;background:linear-gradient(135deg,#201a2d,#14131d);border-radius:20px;padding:14px;margin:12px 0}
+.club-title-art{height:105px;border:1px solid #8e70bd66;border-radius:15px;background:radial-gradient(circle,#b99aff30,transparent 62%),linear-gradient(145deg,#302342,#17141f);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+.club-title-art span{font-size:42px;color:#e0ccff;text-shadow:0 0 20px #b58bff99}
+.club-title-art small{font-size:7px;letter-spacing:1.3px;color:#bca8d8;font-weight:900}
+.club-title-info{min-width:0}.club-title-info>b{display:block;font-size:15px;color:#e8dcff;margin-top:4px;overflow-wrap:anywhere}
+.club-perk-heading{font-size:9px;font-weight:900;letter-spacing:1.2px;color:#a98ad5;margin-top:13px}
+.club-level-list{gap:11px}
+.club-level{position:relative;overflow:hidden;min-height:146px;border-radius:18px;padding:13px;background:linear-gradient(145deg,#1b1924,#111118);border-color:#34303e;transition:transform .18s,border-color .18s}
+.club-level:after{content:"";position:absolute;width:100px;height:100px;right:-42px;bottom:-52px;border:1px solid #bba0ff20;border-radius:50%;box-shadow:0 0 0 12px #bba0ff08,0 0 0 25px #bba0ff05;pointer-events:none}
+.club-level-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.club-level-emblem{width:39px;height:39px;border:1px solid #5b526b;border-radius:13px;display:grid;place-items:center;background:#282333;color:#c9b4ed;font-size:24px;line-height:1}
+.club-level-state{font-size:8px;letter-spacing:1px;font-weight:950;color:#777486}
+.club-level-title{display:block;font-size:13px;letter-spacing:.7px;margin-top:11px}
+.club-level-tag{font-size:8px;letter-spacing:1.7px;font-weight:900;color:#9a8cae;margin-top:2px}
+.club-level-requirements{display:flex;flex-direction:column;gap:5px;margin-top:11px;font-size:9px;color:#a9a4b7}
+.club-level.is-unlocked{border-color:#77609a;background:linear-gradient(145deg,#282039,#17141f)}
+.club-level.is-unlocked .club-level-state{color:#a9edc5}
+.club-level-active .club-level-emblem{color:#a3f2d2;border-color:#477a68;background:#19352d}
+.club-level-premium .club-level-emblem{color:#c9c0ff;border-color:#6a5ba0;background:#292343}
+.club-level-vip .club-level-emblem{color:#f5d38d;border-color:#9b7948;background:#352819}
+.club-level-legend .club-level-emblem{color:#f0b6e8;border-color:#945a89;background:#351d36}
+.club-level-ambassador .club-level-emblem{color:#e7d4ff;border-color:#b48cde;background:#3b2850}
+.club-level-member .club-level-emblem{color:#c4c0d0}
+.season-panel{isolation:isolate;border-color:#77613b;background:radial-gradient(ellipse at 92% 8%,#f5d18c26,transparent 38%),linear-gradient(135deg,#2b211b,#17151b 65%,#111019);padding:19px}
+.season-panel:before{opacity:.26}
+.season-orbit{position:absolute;z-index:-1;right:-50px;top:-75px;width:185px;height:185px;border:1px solid #f2d69a38;border-radius:50%;box-shadow:0 0 0 16px #f2d69a0a,0 0 0 34px #f2d69a08}
+.season-edition{font-size:8px;letter-spacing:1.7px;color:#c2a879;margin-top:6px;font-weight:900}
+.season-score{gap:10px}
+.season-score-token{width:32px;height:32px;border:1px solid #cba75e;border-radius:11px;display:grid;place-items:center;color:#ffe2a2;background:linear-gradient(145deg,#70512b,#2c211b);font-size:19px}
+.season-score strong{font-size:38px}
+.season-score>span:last-child{font-size:9px;letter-spacing:1.5px}
+.season-rewards{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.season-reward{min-height:77px;display:flex;flex-direction:row;align-items:center;gap:10px;border-color:#534737;background:linear-gradient(145deg,#272018,#19161b);padding:10px}
+.season-reward-icon{width:36px;height:36px;flex:0 0 36px;border:1px solid #816c4d;border-radius:12px;display:grid;place-items:center;color:#e8ca91;background:#3b2c1e;font-size:22px}
+.season-reward-copy{display:flex;min-width:0;flex-direction:column;gap:3px}
+.season-reward-copy b{font-size:10px;color:#f0d49c}
+.season-reward-copy span{font-size:10px;color:#e6e0ea;overflow-wrap:anywhere}
+.season-reward-copy small{font-size:8px;color:#b5a58d}
+.season-reward.is-unlocked{border-color:#c49b55;background:linear-gradient(145deg,#3a2b1b,#211b19)}
+.season-reward.is-unlocked .season-reward-icon{color:#fff0c8;border-color:#d5b36f;background:linear-gradient(145deg,#9c7137,#49321d);box-shadow:0 0 16px #e4b96b25}
+.season-reward-mythic .season-reward-icon{color:#f0caff;border-color:#a56ab0;background:#39213d}
+.season-reward-frame .season-reward-icon{color:#c7e6ff;border-color:#6592ba;background:#1c2e3c}
+.season-reward-card .season-reward-icon{color:#d4c5ff;border-color:#8571ba;background:#292341}
+.club-achievement{display:flex;align-items:flex-start;gap:12px;border:1px solid #332f40;background:linear-gradient(145deg,#1a1923,#12121a);border-radius:17px;padding:13px;margin:10px 0}
+.club-achievement.is-locked{opacity:.58}
+.club-achievement.is-unlocked{border-color:#65518b;background:linear-gradient(145deg,#241d32,#15131e)}
+.club-achievement-mark{width:43px;height:43px;flex:0 0 43px;border:1px solid #5b4c76;border-radius:14px;display:grid;place-items:center;background:radial-gradient(circle,#9b7bd12b,transparent 70%),#211b2d;color:#d9c5ff;font-size:24px}
+.club-achievement-copy{min-width:0;flex:1}
+.club-achievement-state{font-size:8px;letter-spacing:.8px;font-weight:900;color:#a8e8c0;white-space:nowrap}
+@media(max-width:390px){.club-hero{padding:18px 15px}.club-hero-seal{width:64px;height:64px;flex-basis:64px}.club-level{padding:11px;min-height:150px}.season-rewards{grid-template-columns:1fr}.club-title-card{grid-template-columns:78px minmax(0,1fr);gap:11px}.club-title-art{height:96px}}
