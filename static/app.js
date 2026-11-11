@@ -452,7 +452,7 @@ function renderAdmin() {
       '<div class="card"><b>Выдать косметику пользователю</b><form id="club-grant-form"><label class="field-label">Telegram ID пользователя</label><input class="field" name="user_id" type="number" min="1" required><label class="field-label">Предмет</label><select class="field" name="cosmetic_key">' + (state.adminClubCosmetics || []).filter(x => x.active).map(x => '<option value="' + esc(x.key) + '">' + esc(x.title) + ' · ' + esc(x.kind) + '</option>').join('') + '</select><button class="primary" type="submit" style="margin-top:10px" ' + (!(state.adminClubCosmetics || []).length ? 'disabled' : '') + '>Выдать предмет</button></form></div>' +
       '<div class="card"><b>Забрать косметику у пользователя</b><form id="club-revoke-form"><label class="field-label">Telegram ID пользователя</label><input class="field" name="user_id" type="number" min="1" required><label class="field-label">Предмет</label><select class="field" name="cosmetic_key">' + (state.adminClubCosmetics || []).map(x => '<option value="' + esc(x.key) + '">' + esc(x.title) + ' · ' + esc(x.kind) + '</option>').join('') + '</select><button class="danger" type="submit" style="margin-top:10px" ' + (!(state.adminClubCosmetics || []).length ? 'disabled' : '') + '>Забрать предмет</button></form></div>' +
       '<div class="section-head"><h3 class="section-title">Каталог косметики</h3></div>' +
-      (state.adminClubCosmetics || []).map(x => '<article class="list-card"><div class="row"><b>' + esc(x.icon) + ' ' + esc(x.title) + '</b><span class="item-sub">' + esc(x.kind) + ' · ' + esc(x.rarity) + ' · ' + (x.active ? 'активно' : 'выключено') + '</span></div><div class="item-sub">' + esc(x.key) + ' · ' + esc(x.description || '') + '</div><div class="row"><button class="small-button" data-action="toggle-club-cosmetic" data-key="' + esc(x.key) + '" data-active="' + (!x.active) + '">' + (x.active ? 'Отключить' : 'Включить') + '</button><button class="danger" data-action="delete-club-cosmetic" data-key="' + esc(x.key) + '">Удалить</button></div></article>').join('') +
+      (state.adminClubCosmetics || []).map(x => '<article class="list-card club-cosmetic-admin" data-key="' + esc(x.key) + '"><div class="row"><b>' + esc(x.icon) + ' ' + esc(x.title) + '</b><span class="item-sub">' + esc(x.kind) + ' · ' + esc(x.rarity) + ' · ' + (x.active ? 'активно' : 'выключено') + '</span></div><label class="field-label">Название</label><input class="field" name="title" maxlength="96" value="' + esc(x.title) + '"><label class="field-label">Описание</label><input class="field" name="description" maxlength="256" value="' + esc(x.description || '') + '"><div class="form-row"><div><label class="field-label">Иконка</label><input class="field" name="icon" maxlength="16" value="' + esc(x.icon) + '"></div><div><label class="field-label">Редкость</label><select class="field" name="rarity"><option value="common" ' + (x.rarity === 'common' ? 'selected' : '') + '>Обычная</option><option value="rare" ' + (x.rarity === 'rare' ? 'selected' : '') + '>Редкая</option><option value="epic" ' + (x.rarity === 'epic' ? 'selected' : '') + '>Эпическая</option><option value="legendary" ' + (x.rarity === 'legendary' ? 'selected' : '') + '>Легендарная</option></select></div></div><div class="row"><button class="small-button" data-action="save-club-cosmetic">Сохранить</button><button class="small-button" data-action="toggle-club-cosmetic" data-key="' + esc(x.key) + '" data-active="' + (!x.active) + '">' + (x.active ? 'Отключить' : 'Включить') + '</button><button class="danger" data-action="delete-club-cosmetic" data-key="' + esc(x.key) + '">Удалить</button></div></article>').join('') +
       '<div class="item-sub">Квесты поддерживают события «завершённый заказ» и «опубликованный отзыв». Достижения и уровни редактируются в JSON выше; титулы и косметику можно создавать здесь и выдавать конкретным пользователям.</div>';
   } else if (state.adminTab === 'stats') {
     const s = state.adminStats;
@@ -655,6 +655,18 @@ async function action(button) {
       await api('/api/admin/club/config', { method: 'PUT', body: JSON.stringify(config) });
       await loadAdminTab('club'); render(); toast('Достижение удалено');
     } catch (error) { toast(error.message); }
+    return;
+  }
+  if (name === 'save-club-cosmetic') {
+    const card = button.closest('.club-cosmetic-admin');
+    const payload = {
+      title: card.querySelector('[name="title"]').value,
+      description: card.querySelector('[name="description"]').value,
+      icon: card.querySelector('[name="icon"]').value,
+      rarity: card.querySelector('[name="rarity"]').value
+    };
+    try { await api('/api/admin/club/cosmetics/' + encodeURIComponent(card.dataset.key), { method: 'PUT', body: JSON.stringify(payload) }); await loadAdminTab('club'); render(); toast('Косметика сохранена'); }
+    catch (error) { toast(error.message); }
     return;
   }
   if (name === 'toggle-club-cosmetic') {
