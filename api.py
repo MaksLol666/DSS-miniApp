@@ -47,7 +47,7 @@ CLUB_REDEMPTION_TIERS = (
     (5000, 400),
     (10000, 500),
 )
-CLUB_MIN_GROSS_PROFIT_PER_UNIT = 250
+CLUB_MIN_PRODUCT_PRICE = 500
 COOKIE_NAME = "ddg_captcha_session"
 INIT_DATA_MAX_AGE = max(60, int(os.getenv("TELEGRAM_INIT_DATA_MAX_AGE_SECONDS", "86400")))
 RATE_WINDOW = max(5, int(os.getenv("SECURITY_RATE_WINDOW_SECONDS", "30")))
@@ -436,7 +436,7 @@ def _totals(items: list[dict], promos: list[Promocode]) -> dict:
 
 
 def _club_discount_for_cart(items: list[dict], subtotal: float) -> dict:
-    """Return the fixed DCP discount tier and validate eligible product margin."""
+    """Return the fixed DCP discount tier for cart items priced at least 500 RUB."""
     discount = 0
     for minimum, amount in CLUB_REDEMPTION_TIERS:
         if subtotal + 0.001 >= minimum:
@@ -449,30 +449,27 @@ def _club_discount_for_cart(items: list[dict], subtotal: float) -> dict:
     for item in items:
         price = float(item.get("price") or 0)
         quantity = int(item.get("quantity") or 1)
-        cost_price = item.get("cost_price")
-        if cost_price is None:
-            continue
-        unit_gross_profit = price - float(cost_price)
-        if unit_gross_profit + 0.001 < CLUB_MIN_GROSS_PROFIT_PER_UNIT:
+        if price + 0.001 < CLUB_MIN_PRODUCT_PRICE:
             continue
         eligible_subtotal += price * quantity
-        eligible_gross_profit += unit_gross_profit * quantity
+        cost_price = item.get("cost_price")
+        if cost_price is not None:
+            eligible_gross_profit += (price - float(cost_price)) * quantity
 
     eligible_subtotal = round(eligible_subtotal, 2)
     eligible_gross_profit = round(eligible_gross_profit, 2)
     available = bool(
         discount > 0
         and eligible_subtotal + 0.001 >= discount
-        and eligible_gross_profit + 0.001 >= discount
     )
     if subtotal + 0.001 < CLUB_MIN_ORDER:
         reason = f"Минимальная сумма корзины для обмена — {CLUB_MIN_ORDER} ₽."
     elif discount <= 0:
         reason = "Для этой суммы корзины скидка DCP недоступна."
     elif eligible_subtotal <= 0:
-        reason = "Нет товаров с исходной валовой прибылью от 250 ₽ за штуку."
-    elif eligible_subtotal + 0.001 < discount or eligible_gross_profit + 0.001 < discount:
-        reason = "Валовой прибыли подходящих товаров недостаточно для этой фиксированной скидки."
+        reason = "Нет товаров стоимостью от 500 ₽."
+    elif eligible_subtotal + 0.001 < discount:
+        reason = "Стоимость подходящих товаров недостаточна для этой фиксированной скидки."
     else:
         reason = ""
     return {
@@ -491,7 +488,7 @@ async def _cart(uid: int) -> dict:
         items = [{
             "product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor,
             "price": float(p.price), "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0),
-            "club_eligible": p.cost_price is not None and float(p.price) - float(p.cost_price) + 0.001 >= CLUB_MIN_GROSS_PROFIT_PER_UNIT,
+            "club_eligible": float(p.price) + 0.001 >= CLUB_MIN_PRODUCT_PRICE,
         } for item, p in rows]
         codes = await _promo_codes(session, uid)
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
