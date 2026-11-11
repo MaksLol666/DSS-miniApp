@@ -600,8 +600,28 @@ async function action(button) {
   }
   if (name === 'save-club-task') {
     const card = button.closest('.club-task-admin');
-    const payload = { target: Number(card.querySelector('[name="target"]').value), reward: Number(card.querySelector('[name="reward"]').value), active: card.querySelector('[name="active"]').value === 'true' };
+    const payload = {
+      title: card.querySelector('[name="title"]').value,
+      description: card.querySelector('[name="description"]').value,
+      period: card.querySelector('[name="period"]').value,
+      event_type: card.querySelector('[name="event_type"]').value,
+      target: Number(card.querySelector('[name="target"]').value),
+      reward: Number(card.querySelector('[name="reward"]').value),
+      active: card.querySelector('[name="active"]').value === 'true'
+    };
     try { await api('/api/admin/club/tasks/' + encodeURIComponent(card.dataset.task), { method: 'PUT', body: JSON.stringify(payload) }); await loadAdminTab('club'); render(); toast('Задание DSS CLUB сохранено'); }
+    catch (error) { toast(error.message); }
+    return;
+  }
+  if (name === 'delete-club-task') {
+    if (!confirm('Удалить задание и его историю прогресса?')) return;
+    try { await api('/api/admin/club/tasks/' + encodeURIComponent(button.closest('.club-task-admin').dataset.task), { method: 'DELETE' }); await loadAdminTab('club'); render(); toast('Задание удалено'); }
+    catch (error) { toast(error.message); }
+    return;
+  }
+  if (name === 'delete-club-cosmetic') {
+    if (!confirm('Удалить косметический предмет?')) return;
+    try { await api('/api/admin/club/cosmetics/' + encodeURIComponent(button.dataset.key), { method: 'DELETE' }); await loadAdminTab('club'); render(); toast('Предмет удалён'); }
     catch (error) { toast(error.message); }
     return;
   }
@@ -724,6 +744,35 @@ document.addEventListener('submit', async event => {
       const target = String(data.get('target') || 'all').split(':');
       const result = await api('/api/admin/promos', { method: 'POST', body: JSON.stringify({ code: String(data.get('code') || '').trim(), kind: String(data.get('kind')), amount: Number(data.get('amount')), owner_id: Number(data.get('owner_id')), max_uses: Number(data.get('max_uses')), target_type: target[0] === 'all' ? 'all' : target[0], target_id: target.length > 1 ? Number(target[1]) : null, min_order: Number(data.get('min_order') || 0), starts_at: String(data.get('starts_at') || '') || null, expires_at: String(data.get('expires_at') || '') || null }) });
       await loadAdminTab('promos'); render(); toast('Промокод создан: ' + result.code);
+    } else if (form.id === 'club-config-form') {
+      let config;
+      try { config = JSON.parse(String(data.get('config_json') || '{}')); }
+      catch (_e) { throw new Error('В конфигурации DSS CLUB ошибка JSON. Проверь запятые и скобки.'); }
+      await api('/api/admin/club/config', { method: 'PUT', body: JSON.stringify(config) });
+      await loadAdminTab('club'); render(); toast('Настройки DSS CLUB сохранены');
+    } else if (form.id === 'club-task-form') {
+      const result = await api('/api/admin/club/tasks', { method: 'POST', body: JSON.stringify({
+        key: String(data.get('key') || ''), title: String(data.get('title') || ''),
+        description: String(data.get('description') || ''), period: String(data.get('period') || 'daily'),
+        event_type: String(data.get('event_type') || 'orders'), target: Number(data.get('target')),
+        reward: Number(data.get('reward')), active: true
+      }) });
+      await loadAdminTab('club'); render(); toast('Задание создано: ' + result.key);
+    } else if (form.id === 'club-cosmetic-form') {
+      const result = await api('/api/admin/club/cosmetics', { method: 'POST', body: JSON.stringify({
+        key: String(data.get('key') || ''), title: String(data.get('title') || ''),
+        kind: String(data.get('kind') || 'badge'), icon: String(data.get('icon') || '✦'),
+        rarity: String(data.get('rarity') || 'common'), description: String(data.get('description') || '')
+      }) });
+      await loadAdminTab('club'); render(); toast('Косметика создана: ' + result.key);
+    } else if (form.id === 'club-balance-form') {
+      const result = await api('/api/admin/club/users/' + Number(data.get('user_id')) + '/balance', { method: 'POST', body: JSON.stringify({
+        amount: Number(data.get('amount')), reason: String(data.get('reason') || '')
+      }) });
+      form.reset(); toast('Баланс обновлён: ' + result.balance + ' DCP');
+    } else if (form.id === 'club-grant-form') {
+      await api('/api/admin/club/users/' + Number(data.get('user_id')) + '/cosmetics/' + encodeURIComponent(String(data.get('cosmetic_key') || '')), { method: 'POST' });
+      form.reset(); toast('Косметика выдана пользователю');
     } else if (form.id === 'broadcast-form') {
       if (!confirm('Запустить рассылку всем доступным пользователям?')) return;
       await api('/api/admin/broadcast', { method: 'POST', body: JSON.stringify({ text: String(data.get('text') || '').trim() }) });
