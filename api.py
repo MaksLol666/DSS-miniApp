@@ -1053,7 +1053,9 @@ async def _sync_club_tasks(session, user_id: int) -> list[str]:
             progress.claimed = True
             amount = await _award_club_dcp(session, user_id, int(task.reward),
                 f"task:{task.key}:{period_key}:{user_id}", f"Задание: {task.title}")
-            season_points = SEASON_DAILY_TASK_SP if task.period == "daily" else SEASON_WEEKLY_TASK_SP
+            economy = (await _club_config(session)).get("economy", {})
+            season_points = int(economy.get("daily_task_sp", SEASON_DAILY_TASK_SP) if task.period == "daily"
+                                else economy.get("weekly_task_sp", SEASON_WEEKLY_TASK_SP))
             sp_earned = await _award_season_points(session, user_id, season_points,
                 f"season:task:{task.key}:{period_key}:{user_id}", f"Сезонное задание: {task.title}")
             messages.append(f"🎯 Задание выполнено: {task.title} · +{amount} DCP" + (f" · +{sp_earned} SP" if sp_earned else ""))
@@ -1062,10 +1064,12 @@ async def _sync_club_tasks(session, user_id: int) -> list[str]:
 
 async def _sync_repeatable_milestones(session, user_id: int) -> list[str]:
     metrics = await _club_metrics(session, user_id)
+    config = await _club_config(session)
+    economy = config.get("economy", {})
     messages = []
     for milestone_type, milestones, metric_name in (
-        ("orders", ORDER_MILESTONES, "orders"),
-        ("referrals", REFERRAL_MILESTONES, "referrals"),
+        ("orders", economy.get("order_milestones", ORDER_MILESTONES), "orders"),
+        ("referrals", economy.get("referral_milestones", REFERRAL_MILESTONES), "referrals"),
     ):
         total = int(metrics[metric_name])
         for threshold, reward in milestones:
@@ -1094,23 +1098,26 @@ async def _sync_repeatable_milestones(session, user_id: int) -> list[str]:
 
 async def _ensure_season(session, now: datetime | None = None):
     now = now or datetime.utcnow()
-    first_end = SEASON_FIRST_START + timedelta(days=SEASON_LENGTH_DAYS)
+    season_config = (await _club_config(session)).get("season", {})
+    first_start = datetime.fromisoformat(season_config.get("first_start", SEASON_FIRST_START.isoformat()))
+    season_length = max(1, int(season_config.get("length_days", SEASON_LENGTH_DAYS)))
+    first_end = first_start + timedelta(days=season_length)
     first = await session.get(ClubSeason, 1)
     if first is None:
         first = ClubSeason(season_number=1, title="Season 01 · Новый год",
-                           starts_at=SEASON_FIRST_START, ends_at=first_end)
+                           starts_at=first_start, ends_at=first_end)
         session.add(first)
         await session.flush()
-    if now < SEASON_FIRST_START:
+    if now < first_start:
         return first, False
-    season_number = int((now - SEASON_FIRST_START).total_seconds() // (SEASON_LENGTH_DAYS * 86400)) + 1
+    season_number = int((now - first_start).total_seconds() // (season_length * 86400)) + 1
     current = first
     for number in range(2, season_number + 1):
         current = await session.get(ClubSeason, number)
         if current is None:
-            starts_at = SEASON_FIRST_START + timedelta(days=SEASON_LENGTH_DAYS * (number - 1))
+            starts_at = first_start + timedelta(days=season_length * (number - 1))
             current = ClubSeason(season_number=number, title=f"Season {number:02d}",
-                                 starts_at=starts_at, ends_at=starts_at + timedelta(days=SEASON_LENGTH_DAYS))
+                                 starts_at=starts_at, ends_at=starts_at + timedelta(days=season_length))
             session.add(current)
             await session.flush()
     return current, current.starts_at <= now < current.ends_at
