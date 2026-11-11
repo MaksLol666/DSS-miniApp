@@ -1240,6 +1240,223 @@ async def admin_club_task_update(task_key: str, data: dict, user: dict = Depends
         return {"ok": True}
 
 
+@app.post("/api/admin/club/tasks")
+async def admin_club_task_create(data: dict, user: dict = Depends(admin_user)):
+    key = re.sub(r"[^a-z0-9_]", "_", str(data.get("key", "")).lower()).strip("_")
+    title = str(data.get("title", "")).strip()
+    description = str(data.get("description", "")).strip()
+    period = str(data.get("period", "daily"))
+    event_type = str(data.get("event_type", "orders"))
+    if not key or len(key) > 48 or not title or len(title) > 96:
+        raise HTTPException(400, "Укажи уникальный ключ и название задания.")
+    if period not in ("daily", "weekly"):
+        raise HTTPException(400, "Период должен быть daily или weekly.")
+    if event_type not in ("orders", "referrals", "reviews"):
+        raise HTTPException(400, "Поддерживаются задания по заказам, рефералам и отзывам.")
+    target = int(data.get("target", 1))
+    reward = int(data.get("reward", 0))
+    if not 1 <= target <= 100000 or not 0 <= reward <= 100000:
+        raise HTTPException(400, "Цель: 1–100000, награда: 0–100000 DCP.")
+    async with SessionLocal() as session:
+        if await session.get(ClubTaskConfig, key):
+            raise HTTPException(409, "Задание с таким ключом уже существует.")
+        session.add(ClubTaskConfig(key=key, title=title, description=description[:256],
+            period=period, event_type=event_type, target=target, reward=reward,
+            active=bool(data.get("active", True))))
+        await session.commit()
+    return {"ok": True, "key": key}
+
+
+@app.delete("/api/admin/club/tasks/{task_key}")
+async def admin_club_task_delete(task_key: str, user: dict = Depends(admin_user)):
+    async with SessionLocal() as session:
+        task = await session.get(ClubTaskConfig, task_key)
+        if not task:
+            raise HTTPException(404, "Задание не найдено.")
+        await session.delete(task)
+        await session.execute(delete(ClubTaskProgress).where(ClubTaskProgress.task_key == task_key))
+        await session.commit()
+    return {"ok": True}
+
+
+@app.get("/api/admin/club/config")
+async def admin_club_config(user: dict = Depends(admin_user)):
+    async with SessionLocal() as session:
+        config = await _club_config(session)
+        await session.commit()
+        return config
+
+
+@app.put("/api/admin/club/config")
+async def admin_club_config_update(data: dict, user: dict = Depends(admin_user)):
+    async with SessionLocal() as session:
+        current = await _club_config(session)
+        for section in ("economy", "levels", "achievements", "season"):
+            if section in data:
+                current[section] = data[section]
+        economy = current.get("economy", {})
+        for field, low, high in (
+            ("order_dcp", 0, 1000000), ("first_order_dcp", 0, 1000000),
+            ("referral_dcp", 0, 1000000), ("order_sp", 0, 1000000),
+            ("referral_sp", 0, 1000000), ("daily_task_sp", 0, 1000000),
+            ("weekly_task_sp", 0, 1000000), ("dcp_per_ruble", 1, 100000),
+            ("min_order", 0, 10000000), ("min_product_price", 0, 10000000),
+        ):
+            value = int(economy.get(field, CLUB_DEFAULT_CONFIG["economy"][field]))
+            if not low <= value <= high:
+                raise HTTPException(400, f"Некорректное значение {field}.")
+            economy[field] = value
+        tiers = economy.get("redemption_tiers", [])
+        if not isinstance(tiers, list) or len(tiers) > 20:
+            raise HTTPException(400, "Некорректная таблица обмена DCP.")
+        normalized_tiers = []
+        previous_min = previous_discount = 0
+        for tier in tiers:
+            if not isinstance(tier, (list, tuple)) or len(tier) != 2:
+                raise HTTPException(400, "Каждый уровень обмена должен содержать сумму корзины и скидку.")
+            minimum, discount = int(tier[0]), int(tier[1])
+            if minimum <= previous_min or discount <= previous_discount or minimum < 0 or discount < 1:
+                raise HTTPException(400, "Уровни обмена должны возрастать по сумме и скидке.")
+            normalized_tiers.append([minimum, discount])
+            previous_min, previous_discount = minimum, discount
+        economy["redemption_tiers"] = normalized_tiers
+        for field in ("order_milestones", "referral_milestones"):
+            values = economy.get(field, [])
+            if not isinstance(values, list) or len(values) > 30:
+                raise HTTPException(400, f"Некорректные рубежи {field}.")
+            cleaned = []
+            for item in values:
+                if not isinstance(item, (list, tuple)) or len(item) != 2:
+                    raise HTTPException(400, "Рубеж должен содержать количество и награду.")
+                threshold, reward = int(item[0]), int(item[1])
+                if threshold < 1 or reward < 0 or reward > 1000000:
+                    raise HTTPException(400, "Некорректный рубеж или награда.")
+                cleaned.append([threshold, reward])
+            economy[field] = cleaned
+        levels = current.get("levels", [])
+        if not isinstance(levels, list) or not levels or len(levels) > 20:
+            raise HTTPException(400, "Должен быть хотя бы один уровень клуба.")
+        seen = set()
+        for level in levels:
+            code = str(level.get("code", "")).strip().upper()
+            if not code or code in seen:
+                raise HTTPException(400, "Ключи уровней должны быть уникальными.")
+            seen.add(code)
+            level["code"] = code
+            level["title"] = str(level.get("title", code))[:48]
+            level["orders"] = max(0, min(1000000, int(level.get("orders", 0))))
+            level["points"] = max(0, min(100000000, int(level.get("points", 0))))
+            level["referrals"] = max(0, min(1000000, int(level.get("referrals", 0))))
+            level["perks"] = [str(x)[:120] for x in level.get("perks", [])[:10]]
+        achievements = current.get("achievements", [])
+        if not isinstance(achievements, list) or len(achievements) > 100:
+            raise HTTPException(400, "Слишком много достижений.")
+        seen = set()
+        for item in achievements:
+            key = str(item.get("key", "")).strip().lower()
+            if not key or key in seen or len(key) > 48:
+                raise HTTPException(400, "Ключи достижений должны быть уникальными.")
+            seen.add(key)
+            if item.get("metric") not in ("orders", "referrals", "reviews"):
+                raise HTTPException(400, "Для достижений доступны метрики orders, referrals и reviews.")
+            if item.get("reward_type", "badge") not in ("badge", "title"):
+                raise HTTPException(400, "Тип награды достижения должен быть badge или title.")
+            item["key"] = key
+            item["title"] = str(item.get("title", key))[:96]
+            item["description"] = str(item.get("description", ""))[:256]
+            item["icon"] = str(item.get("icon", "✦"))[:16]
+            item["target"] = max(1, min(1000000, int(item.get("target", 1))))
+            item["reward"] = max(0, min(1000000, int(item.get("reward", 0))))
+        season = current.get("season", {})
+        season["length_days"] = max(1, min(365, int(season.get("length_days", 30))))
+        for field in ("personal_rewards", "top_rewards"):
+            if not isinstance(season.get(field, []), list) or len(season.get(field, [])) > 100:
+                raise HTTPException(400, "Некорректные сезонные награды.")
+        await _save_club_config(session, current)
+        await session.commit()
+        return {"ok": True, "config": current}
+
+
+@app.post("/api/admin/club/users/{user_id}/balance")
+async def admin_club_adjust_balance(user_id: int, data: dict, user: dict = Depends(admin_user)):
+    delta = int(data.get("amount", 0))
+    reason = str(data.get("reason", "")).strip()[:256]
+    if not delta or abs(delta) > 10000000 or not reason:
+        raise HTTPException(400, "Укажи сумму изменения (не 0, до 10 млн DCP) и причину.")
+    async with SessionLocal() as session:
+        target = await session.get(User, user_id)
+        if not target:
+            raise HTTPException(404, "Пользователь не найден.")
+        account = await session.get(ClubAccount, user_id)
+        if account is None:
+            account = ClubAccount(user_id=user_id, balance=0, lifetime_earned=0)
+            session.add(account)
+            await session.flush()
+        new_balance = int(account.balance or 0) + delta
+        if new_balance < 0:
+            raise HTTPException(409, "На балансе недостаточно DCP для списания.")
+        account.balance = new_balance
+        if delta > 0:
+            account.lifetime_earned = int(account.lifetime_earned or 0) + delta
+        session.add(ClubTransaction(user_id=user_id, event_key=f"admin-adjust:{user_id}:{secrets.token_hex(8)}",
+            kind="admin_adjust", amount=delta, balance_after=new_balance, reason=reason))
+        await session.commit()
+    return {"ok": True, "balance": new_balance}
+
+
+@app.get("/api/admin/club/cosmetics")
+async def admin_club_cosmetics(user: dict = Depends(admin_user)):
+    async with SessionLocal() as session:
+        rows = (await session.execute(select(ClubCosmetic).order_by(ClubCosmetic.kind, ClubCosmetic.key))).scalars().all()
+        return [{"key": x.key, "kind": x.kind, "title": x.title, "description": x.description,
+                 "icon": x.icon, "rarity": x.rarity, "active": bool(x.active)} for x in rows]
+
+
+@app.post("/api/admin/club/cosmetics")
+async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user)):
+    key = re.sub(r"[^a-z0-9_]", "_", str(data.get("key", "")).lower()).strip("_")
+    kind = str(data.get("kind", "badge"))
+    title = str(data.get("title", "")).strip()
+    if not key or len(key) > 48 or not title or kind not in ("title", "badge", "frame", "effect", "card"):
+        raise HTTPException(400, "Укажи ключ, название и корректный тип косметики.")
+    async with SessionLocal() as session:
+        if await session.get(ClubCosmetic, key):
+            raise HTTPException(409, "Косметика с таким ключом уже существует.")
+        session.add(ClubCosmetic(key=key, kind=kind, title=title[:96],
+            description=str(data.get("description", ""))[:256], icon=str(data.get("icon", "✦"))[:16],
+            rarity=str(data.get("rarity", "common"))[:16], active=bool(data.get("active", True))))
+        await session.commit()
+    return {"ok": True, "key": key}
+
+
+@app.delete("/api/admin/club/cosmetics/{cosmetic_key}")
+async def admin_club_cosmetic_delete(cosmetic_key: str, user: dict = Depends(admin_user)):
+    async with SessionLocal() as session:
+        item = await session.get(ClubCosmetic, cosmetic_key)
+        if not item:
+            raise HTTPException(404, "Косметика не найдена.")
+        await session.delete(item)
+        await session.commit()
+    return {"ok": True}
+
+
+@app.post("/api/admin/club/users/{user_id}/cosmetics/{cosmetic_key}")
+async def admin_club_grant_cosmetic(user_id: int, cosmetic_key: str, user: dict = Depends(admin_user)):
+    async with SessionLocal() as session:
+        if not await session.get(User, user_id):
+            raise HTTPException(404, "Пользователь не найден.")
+        cosmetic = await session.get(ClubCosmetic, cosmetic_key)
+        if not cosmetic or not cosmetic.active:
+            raise HTTPException(404, "Активная косметика не найдена.")
+        exists = (await session.execute(select(ClubUserCosmetic.id).where(
+            ClubUserCosmetic.user_id == user_id, ClubUserCosmetic.cosmetic_key == cosmetic_key
+        ))).first()
+        if not exists:
+            session.add(ClubUserCosmetic(user_id=user_id, cosmetic_key=cosmetic_key, granted_by=user["id"]))
+        await session.commit()
+    return {"ok": True}
+
+
 @app.get("/api/club")
 async def club_profile(user: dict = Depends(current_user)):
     uid = user["id"]
