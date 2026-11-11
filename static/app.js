@@ -436,6 +436,9 @@ function renderAdmin() {
     const cfg = state.adminClubConfig || {};
     const economy = cfg.economy || {};
     body = '<div class="card"><b>Экономика и правила DSS CLUB</b><p class="item-sub">Изменяй бонусы, курсы DCP, пороги обмена, уровни, достижения и сезонные награды. Настройки сохраняются в базе данных.</p><form id="club-config-form"><label class="field-label">Полная конфигурация клуба (JSON)</label><textarea class="field" name="config_json" rows="18" spellcheck="false" style="font-family:monospace;font-size:12px;min-height:300px">' + esc(JSON.stringify(cfg, null, 2)) + '</textarea><button class="primary" type="submit" style="margin-top:10px">Сохранить настройки DSS CLUB</button></form></div>' +
+      '<div class="card"><b>Создать достижение</b><form id="club-achievement-form"><label class="field-label">Ключ (латиница)</label><input class="field" name="key" maxlength="48" pattern="[a-zA-Z0-9_]+" required placeholder="ten_orders"><label class="field-label">Название</label><input class="field" name="title" maxlength="96" required><label class="field-label">Описание</label><input class="field" name="description" maxlength="256" required><div class="form-row"><div><label class="field-label">Условие</label><select class="field" name="metric"><option value="orders">Завершённые заказы</option><option value="referrals">Купившие рефералы</option><option value="reviews">Опубликованные отзывы</option></select></div><div><label class="field-label">Количество</label><input class="field" name="target" type="number" min="1" max="1000000" value="1" required></div></div><div class="form-row"><div><label class="field-label">Награда DCP</label><input class="field" name="reward" type="number" min="0" max="1000000" value="0" required></div><div><label class="field-label">Косметическая награда</label><select class="field" name="reward_type"><option value="badge">Значок</option><option value="title">Титул</option></select></div></div><label class="field-label">Иконка</label><input class="field" name="icon" maxlength="16" value="🏆"><button class="primary" type="submit" style="margin-top:10px">Создать достижение</button></form></div>' +
+      '<div class="section-head"><h3 class="section-title">Достижения</h3></div>' +
+      (cfg.achievements || []).map(x => '<article class="list-card"><div class="row"><b>' + esc(x.icon || '✦') + ' ' + esc(x.title) + '</b><span class="item-sub">' + esc(x.metric) + ' · ' + esc(x.target) + '</span></div><div class="item-sub">' + esc(x.key) + ' · +' + esc(x.reward || 0) + ' DCP · ' + (x.active === false ? 'выключено' : 'активно') + '</div><button class="danger" data-action="delete-club-achievement" data-key="' + esc(x.key) + '" style="margin-top:8px">Удалить достижение</button></article>').join('') +
       '<div class="card"><b>Ручное начисление / списание DCP</b><form id="club-balance-form"><label class="field-label">Telegram ID пользователя</label><input class="field" name="user_id" type="number" min="1" required><label class="field-label">Количество DCP (минус = списать)</label><input class="field" name="amount" type="number" min="-10000000" max="10000000" required><label class="field-label">Причина операции</label><input class="field" name="reason" maxlength="256" required placeholder="Компенсация / бонус / корректировка"><button class="primary" type="submit" style="margin-top:10px">Изменить баланс</button></form></div>' +
       '<div class="card"><b>Создать задание</b><form id="club-task-form"><label class="field-label">Уникальный ключ (латиница)</label><input class="field" name="key" maxlength="48" pattern="[a-zA-Z0-9_]+" required placeholder="weekend_orders"><label class="field-label">Название</label><input class="field" name="title" maxlength="96" required><label class="field-label">Описание</label><input class="field" name="description" maxlength="256"><div class="form-row"><div><label class="field-label">Период</label><select class="field" name="period"><option value="daily">Ежедневное</option><option value="weekly">Еженедельное</option></select></div><div><label class="field-label">Действие</label><select class="field" name="event_type"><option value="orders">Завершённые заказы</option><option value="reviews">Опубликованные отзывы</option></select></div></div><div class="form-row"><div><label class="field-label">Цель</label><input class="field" name="target" type="number" min="1" max="100000" value="1" required></div><div><label class="field-label">Награда DCP</label><input class="field" name="reward" type="number" min="0" max="100000" value="30" required></div></div><button class="primary" type="submit" style="margin-top:10px">Создать задание</button></form></div>' +
       '<div class="section-head"><h3 class="section-title">Активные и сохранённые задания</h3></div>' +
@@ -622,6 +625,16 @@ async function action(button) {
     catch (error) { toast(error.message); }
     return;
   }
+  if (name === 'delete-club-achievement') {
+    if (!confirm('Удалить достижение из правил клуба? Уже полученные награды и записи пользователей останутся в истории.')) return;
+    try {
+      const config = state.adminClubConfig || {};
+      config.achievements = (config.achievements || []).filter(x => x.key !== button.dataset.key);
+      await api('/api/admin/club/config', { method: 'PUT', body: JSON.stringify(config) });
+      await loadAdminTab('club'); render(); toast('Достижение удалено');
+    } catch (error) { toast(error.message); }
+    return;
+  }
   if (name === 'toggle-club-cosmetic') {
     try { await api('/api/admin/club/cosmetics/' + encodeURIComponent(button.dataset.key), { method: 'PUT', body: JSON.stringify({ active: button.dataset.active === 'true' }) }); await loadAdminTab('club'); render(); toast('Статус косметики изменён'); }
     catch (error) { toast(error.message); }
@@ -758,6 +771,21 @@ document.addEventListener('submit', async event => {
       catch (_e) { throw new Error('В конфигурации DSS CLUB ошибка JSON. Проверь запятые и скобки.'); }
       await api('/api/admin/club/config', { method: 'PUT', body: JSON.stringify(config) });
       await loadAdminTab('club'); render(); toast('Настройки DSS CLUB сохранены');
+    } else if (form.id === 'club-achievement-form') {
+      const config = state.adminClubConfig || {};
+      config.achievements = config.achievements || [];
+      const key = String(data.get('key') || '').trim().toLowerCase();
+      if (config.achievements.some(x => x.key === key)) throw new Error('Достижение с таким ключом уже существует.');
+      config.achievements.push({
+        key, title: String(data.get('title') || '').trim(),
+        description: String(data.get('description') || '').trim(),
+        icon: String(data.get('icon') || '🏆'),
+        metric: String(data.get('metric') || 'orders'),
+        target: Number(data.get('target')), reward: Number(data.get('reward')),
+        reward_type: String(data.get('reward_type') || 'badge'), active: true
+      });
+      await api('/api/admin/club/config', { method: 'PUT', body: JSON.stringify(config) });
+      await loadAdminTab('club'); render(); toast('Достижение создано');
     } else if (form.id === 'club-task-form') {
       const result = await api('/api/admin/club/tasks', { method: 'POST', body: JSON.stringify({
         key: String(data.get('key') || ''), title: String(data.get('title') || ''),
