@@ -877,6 +877,41 @@ SEASON_TOP_REWARDS = [
 
 ]
 
+async def _award_club_dcp(session, user_id: int, amount: int, event_key: str, reason: str) -> int:
+    if amount <= 0:
+        return 0
+    exists = (await session.execute(select(ClubTransaction.id).where(ClubTransaction.event_key == event_key))).first()
+    if exists:
+        return 0
+    account = await session.get(ClubAccount, user_id)
+    if account is None:
+        account = ClubAccount(user_id=user_id, balance=0, lifetime_earned=0)
+        session.add(account)
+        await session.flush()
+    account.balance = int(account.balance or 0) + amount
+    account.lifetime_earned = int(account.lifetime_earned or 0) + amount
+    session.add(ClubTransaction(user_id=user_id, event_key=event_key, kind="earn", amount=amount,
+                                balance_after=account.balance, reason=reason))
+    return amount
+
+
+
+CLUB_ACHIEVEMENTS = [
+    # These are cosmetic unlocks; DCP is awarded by repeatable milestone rules below.
+    {"key": "first_order", "title": "FIRST STEP", "description": "Заверши свой первый заказ", "icon": "🛍️", "metric": "orders", "target": 1, "reward": 0, "reward_type": "badge"},
+    {"key": "five_orders", "title": "REGULAR", "description": "Заверши 5 заказов", "icon": "⭐", "metric": "orders", "target": 5, "reward": 0, "reward_type": "title"},
+    {"key": "ten_orders", "title": "LOYAL", "description": "Заверши 10 заказов", "icon": "💜", "metric": "orders", "target": 10, "reward": 0, "reward_type": "badge"},
+    {"key": "twenty_five_orders", "title": "VETERAN", "description": "Заверши 25 заказов", "icon": "🏆", "metric": "orders", "target": 25, "reward": 0, "reward_type": "title"},
+    {"key": "first_referral", "title": "CONNECTOR", "description": "Пригласи друга, который завершит заказ", "icon": "🤝", "metric": "referrals", "target": 1, "reward": 0, "reward_type": "badge"},
+    {"key": "five_referrals", "title": "AMBASSADOR", "description": "Получи 5 завершивших покупку рефералов", "icon": "👑", "metric": "referrals", "target": 5, "reward": 0, "reward_type": "title"},
+    {"key": "first_review", "title": "YOUR VOICE", "description": "Опубликуй первый одобренный отзыв", "icon": "✍️", "metric": "reviews", "target": 1, "reward": 0, "reward_type": "badge"},
+]
+DEFAULT_CLUB_TASKS = [
+    {"key": "daily_order", "title": "DAILY CHECK", "description": "Заверши 1 заказ за день", "period": "daily", "event_type": "orders", "target": 1, "reward": 30, "active": True},
+    {"key": "weekly_orders", "title": "WEEKLY GRIND", "description": "Заверши 2 заказа за неделю", "period": "weekly", "event_type": "orders", "target": 2, "reward": 100, "active": True},
+]
+
+
 CLUB_DEFAULT_CONFIG = {
     "economy": {
         "order_dcp": 100, "first_order_dcp": 200, "referral_dcp": 150,
@@ -923,42 +958,6 @@ async def _save_club_config(session, value: dict) -> None:
         session.add(ClubSetting(key="main", value=payload))
     else:
         row.value = payload
-
-
-async def _award_club_dcp(session, user_id: int, amount: int, event_key: str, reason: str) -> int:
-    if amount <= 0:
-        return 0
-    exists = (await session.execute(select(ClubTransaction.id).where(ClubTransaction.event_key == event_key))).first()
-    if exists:
-        return 0
-    account = await session.get(ClubAccount, user_id)
-    if account is None:
-        account = ClubAccount(user_id=user_id, balance=0, lifetime_earned=0)
-        session.add(account)
-        await session.flush()
-    account.balance = int(account.balance or 0) + amount
-    account.lifetime_earned = int(account.lifetime_earned or 0) + amount
-    session.add(ClubTransaction(user_id=user_id, event_key=event_key, kind="earn", amount=amount,
-                                balance_after=account.balance, reason=reason))
-    return amount
-
-
-
-CLUB_ACHIEVEMENTS = [
-    # These are cosmetic unlocks; DCP is awarded by repeatable milestone rules below.
-    {"key": "first_order", "title": "FIRST STEP", "description": "Заверши свой первый заказ", "icon": "🛍️", "metric": "orders", "target": 1, "reward": 0, "reward_type": "badge"},
-    {"key": "five_orders", "title": "REGULAR", "description": "Заверши 5 заказов", "icon": "⭐", "metric": "orders", "target": 5, "reward": 0, "reward_type": "title"},
-    {"key": "ten_orders", "title": "LOYAL", "description": "Заверши 10 заказов", "icon": "💜", "metric": "orders", "target": 10, "reward": 0, "reward_type": "badge"},
-    {"key": "twenty_five_orders", "title": "VETERAN", "description": "Заверши 25 заказов", "icon": "🏆", "metric": "orders", "target": 25, "reward": 0, "reward_type": "title"},
-    {"key": "first_referral", "title": "CONNECTOR", "description": "Пригласи друга, который завершит заказ", "icon": "🤝", "metric": "referrals", "target": 1, "reward": 0, "reward_type": "badge"},
-    {"key": "five_referrals", "title": "AMBASSADOR", "description": "Получи 5 завершивших покупку рефералов", "icon": "👑", "metric": "referrals", "target": 5, "reward": 0, "reward_type": "title"},
-    {"key": "first_review", "title": "YOUR VOICE", "description": "Опубликуй первый одобренный отзыв", "icon": "✍️", "metric": "reviews", "target": 1, "reward": 0, "reward_type": "badge"},
-]
-DEFAULT_CLUB_TASKS = [
-    {"key": "daily_order", "title": "DAILY CHECK", "description": "Заверши 1 заказ за день", "period": "daily", "event_type": "orders", "target": 1, "reward": 30, "active": True},
-    {"key": "weekly_orders", "title": "WEEKLY GRIND", "description": "Заверши 2 заказа за неделю", "period": "weekly", "event_type": "orders", "target": 2, "reward": 100, "active": True},
-]
-
 
 async def _ensure_club_tasks(session):
     for item in DEFAULT_CLUB_TASKS:
