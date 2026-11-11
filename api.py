@@ -981,8 +981,11 @@ async def _club_metrics(session, user_id: int) -> dict:
 
 async def _sync_club_achievements(session, user_id: int) -> list[str]:
     metrics = await _club_metrics(session, user_id)
+    config = await _club_config(session)
     messages = []
-    for item in CLUB_ACHIEVEMENTS:
+    for item in config.get("achievements", CLUB_ACHIEVEMENTS):
+        if not item.get("active", True):
+            continue
         if metrics[item["metric"]] < item["target"]:
             continue
         exists = (await session.execute(select(ClubAchievementUnlock.id).where(
@@ -1190,21 +1193,37 @@ async def club_activities(user: dict = Depends(current_user)):
             task_data.append({"key": task.key, "title": task.title, "description": task.description, "period": task.period,
                 "target": int(task.target), "reward": int(task.reward), "progress": min(count, int(task.target)), "completed": count >= int(task.target)})
         await session.commit()
-        return {"achievements": [{**item, "unlocked": item["key"] in unlocked} for item in CLUB_ACHIEVEMENTS],
-                "tasks": task_data, "selected_title": selected.title_key if selected else None}
+        config = await _club_config(session)
+        cosmetics = (await session.execute(
+            select(ClubCosmetic, ClubUserCosmetic.id)
+            .join(ClubUserCosmetic, ClubUserCosmetic.cosmetic_key == ClubCosmetic.key)
+            .where(ClubUserCosmetic.user_id == uid, ClubCosmetic.active.is_(True))
+            .order_by(ClubCosmetic.kind, ClubCosmetic.title)
+        )).all()
+        return {"achievements": [{**item, "unlocked": item["key"] in unlocked}
+                    for item in config.get("achievements", CLUB_ACHIEVEMENTS) if item.get("active", True)],
+                "tasks": task_data, "selected_title": selected.title_key if selected else None,
+                "cosmetics": [{"key": c.key, "kind": c.kind, "title": c.title, "description": c.description,
+                    "icon": c.icon, "rarity": c.rarity} for c, _ in cosmetics]}
 
 
 @app.post("/api/club/title")
 async def club_select_title(data: dict, user: dict = Depends(current_user)):
     key = str(data.get("title_key", "")).strip()
-    allowed = {item["key"] for item in CLUB_ACHIEVEMENTS if item["reward_type"] == "title"}
-    if key not in allowed:
-        raise HTTPException(400, "Неизвестный клубный титул.")
     async with SessionLocal() as session:
+        config = await _club_config(session)
+        allowed = {item["key"] for item in config.get("achievements", CLUB_ACHIEVEMENTS)
+                   if item.get("reward_type") == "title" and item.get("active", True)}
+        cosmetic = await session.get(ClubCosmetic, key)
+        owned_cosmetic = (await session.execute(select(ClubUserCosmetic.id).where(
+            ClubUserCosmetic.user_id == user["id"], ClubUserCosmetic.cosmetic_key == key
+        ))).first()
+        if key not in allowed and not (cosmetic and cosmetic.kind == "title" and owned_cosmetic):
+            raise HTTPException(400, "Титул не открыт или не существует.")
         unlocked = (await session.execute(select(ClubAchievementUnlock.id).where(
             ClubAchievementUnlock.user_id == user["id"], ClubAchievementUnlock.achievement_key == key
         ))).first()
-        if not unlocked:
+        if key in allowed and not unlocked:
             raise HTTPException(403, "Сначала открой это достижение.")
         selection = await session.get(ClubTitleSelection, user["id"])
         if selection is None:
