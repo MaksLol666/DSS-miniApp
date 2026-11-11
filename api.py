@@ -1504,10 +1504,14 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
             has_points = (await session.execute(select(ClubSeasonPoint.id).where(
                 ClubSeasonPoint.season_number == 1
             ).limit(1))).first()
+            first_start = datetime.fromisoformat(str(season.get("first_start", SEASON_FIRST_START.isoformat())))
             if not has_points:
-                first_start = datetime.fromisoformat(str(season.get("first_start", SEASON_FIRST_START.isoformat())))
                 season_row.starts_at = first_start
                 season_row.ends_at = first_start + timedelta(days=season["length_days"])
+            else:
+                persisted_length = max(1, int((season_row.ends_at - season_row.starts_at).total_seconds() // 86400))
+                if first_start != season_row.starts_at or season["length_days"] != persisted_length:
+                    raise HTTPException(409, "Дату и длительность сезона нельзя менять после начисления первых SP.")
         await _save_club_config(session, current)
         await session.commit()
         return {"ok": True, "config": current}
