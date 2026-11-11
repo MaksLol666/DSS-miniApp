@@ -874,7 +874,55 @@ SEASON_TOP_REWARDS = [
     {"from": 4, "to": 10, "key": "top_4_10", "title": "Редкий сезонный значок"},
     {"from": 11, "to": 25, "key": "top_11_25", "title": "Сезонная карточка профиля"},
     {"from": 26, "to": 50, "key": "top_26_50", "title": "Особый значок участника сезона"},
+
 ]
+
+CLUB_DEFAULT_CONFIG = {
+    "economy": {
+        "order_dcp": 100, "first_order_dcp": 200, "referral_dcp": 150,
+        "order_sp": 10, "referral_sp": 25, "daily_task_sp": 15, "weekly_task_sp": 75,
+        "dcp_per_ruble": 100, "min_order": 500, "min_product_price": 500,
+        "redemption_tiers": [[500, 100], [1000, 150], [1500, 250], [3000, 300], [5000, 400], [10000, 500]],
+        "order_milestones": [[5, 100], [10, 250], [25, 500], [50, 1000], [100, 2500]],
+        "referral_milestones": [[5, 300], [10, 700], [25, 1500], [50, 3500], [100, 8000]]
+    },
+    "levels": CLUB_LEVELS,
+    "achievements": CLUB_ACHIEVEMENTS,
+    "season": {
+        "first_start": "2026-11-30T21:00:00", "length_days": 30,
+        "personal_rewards": SEASON_PERSONAL_REWARDS, "top_rewards": SEASON_TOP_REWARDS
+    }
+}
+
+
+async def _club_config(session) -> dict:
+    row = await session.get(ClubSetting, "main")
+    if row is None:
+        value = json.loads(json.dumps(CLUB_DEFAULT_CONFIG, ensure_ascii=False))
+        session.add(ClubSetting(key="main", value=json.dumps(value, ensure_ascii=False)))
+        await session.flush()
+        return value
+    try:
+        stored = json.loads(row.value or "{}")
+    except (TypeError, ValueError):
+        stored = {}
+    result = json.loads(json.dumps(CLUB_DEFAULT_CONFIG, ensure_ascii=False))
+    if isinstance(stored, dict):
+        for key in result:
+            if key in stored and isinstance(stored[key], dict):
+                result[key].update(stored[key])
+            elif key in stored:
+                result[key] = stored[key]
+    return result
+
+
+async def _save_club_config(session, value: dict) -> None:
+    row = await session.get(ClubSetting, "main")
+    payload = json.dumps(value, ensure_ascii=False)
+    if row is None:
+        session.add(ClubSetting(key="main", value=payload))
+    else:
+        row.value = payload
 
 
 async def _award_club_dcp(session, user_id: int, amount: int, event_key: str, reason: str) -> int:
