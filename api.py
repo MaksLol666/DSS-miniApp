@@ -1521,12 +1521,14 @@ async def club_profile(user: dict = Depends(current_user)):
         rows = (await session.execute(select(ClubTransaction).where(
             ClubTransaction.user_id == uid
         ).order_by(ClubTransaction.created_at.desc(), ClubTransaction.id.desc()).limit(20))).scalars().all()
+        config = await _club_config(session)
+    levels = config.get("levels", CLUB_LEVELS)
     level_index = 0
-    for index, level in enumerate(CLUB_LEVELS):
+    for index, level in enumerate(levels):
         if orders >= level["orders"] and lifetime >= level["points"] and referrals >= level.get("referrals", 0):
             level_index = index
-    current = CLUB_LEVELS[level_index]
-    nxt = CLUB_LEVELS[level_index + 1] if level_index + 1 < len(CLUB_LEVELS) else None
+    current = levels[level_index]
+    nxt = levels[level_index + 1] if level_index + 1 < len(levels) else None
     if nxt:
         ratios = [orders / max(nxt["orders"], 1), lifetime / max(nxt["points"], 1)]
         if nxt.get("referrals", 0):
@@ -1538,7 +1540,7 @@ async def club_profile(user: dict = Depends(current_user)):
         "balance": balance, "lifetime_earned": lifetime, "completed_orders": orders,
         "completed_referrals": referrals,
         "level": current["code"], "level_title": current["title"], "level_perks": current["perks"],
-        "levels": [{**level, "unlocked": level_index >= i} for i, level in enumerate(CLUB_LEVELS)],
+        "levels": [{**level, "unlocked": level_index >= i} for i, level in enumerate(levels)],
         "next_level": nxt["code"] if nxt else None,
         "next_level_orders": nxt["orders"] if nxt else None,
         "next_level_points": nxt["points"] if nxt else None,
@@ -1568,7 +1570,10 @@ async def club_season(user: dict = Depends(current_user)):
         rewards = (await session.execute(select(ClubSeasonReward).where(
             ClubSeasonReward.user_id == uid
         ).order_by(ClubSeasonReward.season_number.desc(), ClubSeasonReward.id.desc()))).scalars().all()
+        season_config = (await _club_config(session)).get("season", {})
         await session.commit()
+    personal_rewards = season_config.get("personal_rewards", SEASON_PERSONAL_REWARDS)
+    top_rewards = season_config.get("top_rewards", SEASON_TOP_REWARDS)
     ranking = sorted(
         [{"user_id": int(row.id), "username": row.username or "",
           "points": int(row.points or 0), "reached_at": row.reached_at}
@@ -1588,8 +1593,8 @@ async def club_season(user: dict = Depends(current_user)):
         "leaderboard": [{"position": row["position"], "user_id": row["user_id"],
                          "username": row["username"], "points": row["points"]} for row in ranking[:50]],
         "personal_rewards": [{**reward, "unlocked": my_points >= reward["points"]}
-                             for reward in SEASON_PERSONAL_REWARDS],
-        "top_rewards": SEASON_TOP_REWARDS,
+                             for reward in personal_rewards],
+        "top_rewards": top_rewards,
         "earned_rewards": [{"season": r.season_number, "key": r.reward_key, "title": r.title, "rank": r.rank}
                            for r in rewards],
     }
