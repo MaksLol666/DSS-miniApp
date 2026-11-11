@@ -1139,6 +1139,9 @@ async def _award_season_points(session, user_id: int, amount: int, event_key: st
 
 
 async def _finalize_expired_seasons(session, now: datetime):
+    season_config = (await _club_config(session)).get("season", {})
+    personal_rewards = season_config.get("personal_rewards", SEASON_PERSONAL_REWARDS)
+    top_rewards = season_config.get("top_rewards", SEASON_TOP_REWARDS)
     seasons = (await session.execute(select(ClubSeason).where(ClubSeason.ends_at <= now))).scalars().all()
     for season in seasons:
         rows = (await session.execute(
@@ -1150,7 +1153,7 @@ async def _finalize_expired_seasons(session, now: datetime):
         ranking = sorted(rows, key=lambda row: (-int(row.points or 0), row.reached_at or datetime.max, int(row.user_id)))
         for row in rows:
             points = int(row.points or 0)
-            for reward in SEASON_PERSONAL_REWARDS:
+            for reward in personal_rewards:
                 if points >= reward["points"]:
                     exists = (await session.execute(select(ClubSeasonReward.id).where(
                         ClubSeasonReward.user_id == row.user_id,
@@ -1163,7 +1166,7 @@ async def _finalize_expired_seasons(session, now: datetime):
         for rank, row in enumerate(ranking, 1):
             if rank > 50:
                 break
-            reward = next((item for item in SEASON_TOP_REWARDS if item["from"] <= rank <= item["to"]), None)
+            reward = next((item for item in top_rewards if item["from"] <= rank <= item["to"]), None)
             if reward:
                 exists = (await session.execute(select(ClubSeasonReward.id).where(
                     ClubSeasonReward.user_id == row.user_id,
