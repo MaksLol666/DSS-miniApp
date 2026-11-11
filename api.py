@@ -1380,6 +1380,9 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
         current = await _club_config(session)
         for section in ("economy", "levels", "achievements", "season"):
             if section in data:
+                expected = dict if section in ("economy", "season") else list
+                if not isinstance(data[section], expected):
+                    raise HTTPException(400, f"Раздел {section} имеет неверный формат.")
                 current[section] = data[section]
         economy = current.get("economy", {})
         for field, low, high in (
@@ -1424,7 +1427,10 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
         if not isinstance(levels, list) or not levels or len(levels) > 20:
             raise HTTPException(400, "Должен быть хотя бы один уровень клуба.")
         seen = set()
+        previous_thresholds = (-1, -1, -1)
         for level in levels:
+            if not isinstance(level, dict):
+                raise HTTPException(400, "Каждый уровень должен быть объектом.")
             code = str(level.get("code", "")).strip().upper()
             if not code or code in seen:
                 raise HTTPException(400, "Ключи уровней должны быть уникальными.")
@@ -1434,12 +1440,21 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
             level["orders"] = max(0, min(1000000, int(level.get("orders", 0))))
             level["points"] = max(0, min(100000000, int(level.get("points", 0))))
             level["referrals"] = max(0, min(1000000, int(level.get("referrals", 0))))
-            level["perks"] = [str(x)[:120] for x in level.get("perks", [])[:10]]
+            thresholds = (level["orders"], level["points"], level["referrals"])
+            if any(thresholds[i] < previous_thresholds[i] for i in range(3)):
+                raise HTTPException(400, "Требования уровней должны идти по возрастанию.")
+            previous_thresholds = thresholds
+            perks = level.get("perks", [])
+            if not isinstance(perks, list):
+                raise HTTPException(400, "Привилегии уровня должны быть списком.")
+            level["perks"] = [str(x)[:120] for x in perks[:10]]
         achievements = current.get("achievements", [])
         if not isinstance(achievements, list) or len(achievements) > 100:
             raise HTTPException(400, "Слишком много достижений.")
         seen = set()
         for item in achievements:
+            if not isinstance(item, dict):
+                raise HTTPException(400, "Каждое достижение должно быть объектом.")
             key = str(item.get("key", "")).strip().lower()
             if not key or key in seen or len(key) > 48:
                 raise HTTPException(400, "Ключи достижений должны быть уникальными.")
@@ -1456,6 +1471,8 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
             item["reward"] = max(0, min(1000000, int(item.get("reward", 0))))
         season = current.get("season", {})
         season["length_days"] = max(1, min(365, int(season.get("length_days", 30))))
+        season["title"] = str(season.get("title", "Season 01 · Новый год"))[:96]
+        season["title_prefix"] = str(season.get("title_prefix", "Season"))[:40]
         try:
             datetime.fromisoformat(str(season.get("first_start", SEASON_FIRST_START.isoformat())))
         except ValueError:
