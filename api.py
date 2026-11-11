@@ -657,10 +657,11 @@ async def club_redeem(data: ClubRedeemInput, user: dict = Depends(current_user))
         if not rows:
             raise HTTPException(400, "Сначала добавь товары в корзину.")
         subtotal = round(sum(float(p.price) * int(item.quantity or 1) for item, p in rows), 2)
+        club_config = await _club_config(session)
         club_offer = _club_discount_for_cart([
             {"price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "quantity": int(item.quantity or 1)}
             for item, p in rows
-        ], subtotal)
+        ], subtotal, club_config)
         if not club_offer["available"]:
             raise HTTPException(400, club_offer["reason"] or "Клубная скидка недоступна для этой корзины.")
         required_points = int(club_offer["required_points"])
