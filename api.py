@@ -1500,6 +1500,7 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
                 raise HTTPException(400, "У каждой награды рейтинга нужны ключ и название.")
         season_row = await session.get(ClubSeason, 1)
         if season_row is not None:
+            season_row.title = str(season.get("title", season_row.title))[:96]
             has_points = (await session.execute(select(ClubSeasonPoint.id).where(
                 ClubSeasonPoint.season_number == 1
             ).limit(1))).first()
@@ -1507,7 +1508,6 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
                 first_start = datetime.fromisoformat(str(season.get("first_start", SEASON_FIRST_START.isoformat())))
                 season_row.starts_at = first_start
                 season_row.ends_at = first_start + timedelta(days=season["length_days"])
-                season_row.title = str(season.get("title", season_row.title))[:96]
         await _save_club_config(session, current)
         await session.commit()
         return {"ok": True, "config": current}
