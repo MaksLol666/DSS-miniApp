@@ -1110,6 +1110,11 @@ async def _ensure_season(session, now: datetime | None = None):
                            starts_at=first_start, ends_at=first_end)
         session.add(first)
         await session.flush()
+    else:
+        # Once a season record exists, its persisted start/end dates are authoritative.
+        # This prevents later settings edits from unexpectedly resetting the season index.
+        first_start = first.starts_at
+        season_length = max(1, int((first.ends_at - first.starts_at).total_seconds() // 86400))
     if now < first_start:
         return first, False
     season_number = int((now - first_start).total_seconds() // (season_length * 86400)) + 1
