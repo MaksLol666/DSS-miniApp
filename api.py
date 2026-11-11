@@ -488,11 +488,13 @@ def _club_discount_for_cart(items: list[dict], subtotal: float, config: dict | N
 
 async def _cart(uid: int) -> dict:
     async with SessionLocal() as session:
+        club_config = await _club_config(session)
+        min_product_price = int(club_config.get("economy", {}).get("min_product_price", CLUB_MIN_PRODUCT_PRICE))
         rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == uid).order_by(CartItem.id))).all()
         items = [{
             "product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor,
             "price": float(p.price), "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0),
-            "club_eligible": float(p.price) + 0.001 >= CLUB_MIN_PRODUCT_PRICE,
+            "club_eligible": float(p.price) + 0.001 >= min_product_price,
         } for item, p in rows]
         codes = await _promo_codes(session, uid)
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
@@ -501,7 +503,6 @@ async def _cart(uid: int) -> dict:
         redemption = await session.get(CartClubRedemption, uid)
         subtotal = round(sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items), 2)
         stored_points = int(redemption.points or 0) if redemption else 0
-        club_config = await _club_config(session)
         club_offer = _club_discount_for_cart([
             {"price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "quantity": int(item.quantity or 1)}
             for item, p in rows
@@ -1420,9 +1421,26 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
             item["reward"] = max(0, min(1000000, int(item.get("reward", 0))))
         season = current.get("season", {})
         season["length_days"] = max(1, min(365, int(season.get("length_days", 30))))
+        try:
+            datetime.fromisoformat(str(season.get("first_start", SEASON_FIRST_START.isoformat())))
+        except ValueError:
+            raise HTTPException(400, "Дата старта сезона должна быть в формате YYYY-MM-DDTHH:MM:SS.")
         for field in ("personal_rewards", "top_rewards"):
             if not isinstance(season.get(field, []), list) or len(season.get(field, [])) > 100:
                 raise HTTPException(400, "Некорректные сезонные награды.")
+        for reward in season.get("personal_rewards", []):
+            reward["points"] = max(0, min(100000000, int(reward.get("points", 0))))
+            reward["key"] = str(reward.get("key", ""))[:64]
+            reward["title"] = str(reward.get("title", ""))[:160]
+            if not reward["key"] or not reward["title"]:
+                raise HTTPException(400, "У каждой личной сезонной награды нужны ключ и название.")
+        for reward in season.get("top_rewards", []):
+            reward["from"] = max(1, min(100000, int(reward.get("from", 1))))
+            reward["to"] = max(reward["from"], min(100000, int(reward.get("to", reward["from"]))))
+            reward["key"] = str(reward.get("key", ""))[:64]
+            reward["title"] = str(reward.get("title", ""))[:160]
+            if not reward["key"] or not reward["title"]:
+                raise HTTPException(400, "У каждой награды рейтинга нужны ключ и название.")
         await _save_club_config(session, current)
         await session.commit()
         return {"ok": True, "config": current}
