@@ -1498,6 +1498,29 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
     return {"ok": True, "key": key}
 
 
+@app.put("/api/admin/club/cosmetics/{cosmetic_key}")
+async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict = Depends(admin_user)):
+    async with SessionLocal() as session:
+        item = await session.get(ClubCosmetic, cosmetic_key)
+        if not item:
+            raise HTTPException(404, "Косметика не найдена.")
+        if "title" in data:
+            title = str(data["title"]).strip()
+            if not title or len(title) > 96:
+                raise HTTPException(400, "Название должно быть от 1 до 96 символов.")
+            item.title = title
+        if "description" in data:
+            item.description = str(data["description"])[:256]
+        if "icon" in data:
+            item.icon = str(data["icon"])[:16]
+        if "rarity" in data:
+            item.rarity = str(data["rarity"])[:16]
+        if "active" in data:
+            item.active = bool(data["active"])
+        await session.commit()
+    return {"ok": True}
+
+
 @app.delete("/api/admin/club/cosmetics/{cosmetic_key}")
 async def admin_club_cosmetic_delete(cosmetic_key: str, user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
