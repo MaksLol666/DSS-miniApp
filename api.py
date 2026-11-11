@@ -435,10 +435,14 @@ def _totals(items: list[dict], promos: list[Promocode]) -> dict:
     }
 
 
-def _club_discount_for_cart(items: list[dict], subtotal: float) -> dict:
-    """Return the fixed DCP discount tier for cart items priced at least 500 RUB."""
+def _club_discount_for_cart(items: list[dict], subtotal: float, config: dict | None = None) -> dict:
+    """Return the fixed DCP discount tier using the active DSS CLUB economy rules."""
+    economy = (config or CLUB_DEFAULT_CONFIG).get("economy", {})
+    min_order = int(economy.get("min_order", CLUB_MIN_ORDER))
+    min_product_price = int(economy.get("min_product_price", CLUB_MIN_PRODUCT_PRICE))
+    dcp_per_ruble = int(economy.get("dcp_per_ruble", CLUB_DCP_PER_RUBLE))
     discount = 0
-    for minimum, amount in CLUB_REDEMPTION_TIERS:
+    for minimum, amount in economy.get("redemption_tiers", CLUB_REDEMPTION_TIERS):
         if subtotal + 0.001 >= minimum:
             discount = amount
         else:
@@ -449,7 +453,7 @@ def _club_discount_for_cart(items: list[dict], subtotal: float) -> dict:
     for item in items:
         price = float(item.get("price") or 0)
         quantity = int(item.get("quantity") or 1)
-        if price + 0.001 < CLUB_MIN_PRODUCT_PRICE:
+        if price + 0.001 < min_product_price:
             continue
         eligible_subtotal += price * quantity
         cost_price = item.get("cost_price")
@@ -462,8 +466,8 @@ def _club_discount_for_cart(items: list[dict], subtotal: float) -> dict:
         discount > 0
         and eligible_subtotal + 0.001 >= discount
     )
-    if subtotal + 0.001 < CLUB_MIN_ORDER:
-        reason = f"Минимальная сумма корзины для обмена — {CLUB_MIN_ORDER} ₽."
+    if subtotal + 0.001 < min_order:
+        reason = f"Минимальная сумма корзины для обмена — {min_order} ₽."
     elif discount <= 0:
         reason = "Для этой суммы корзины скидка DCP недоступна."
     elif eligible_subtotal <= 0:
@@ -474,7 +478,7 @@ def _club_discount_for_cart(items: list[dict], subtotal: float) -> dict:
         reason = ""
     return {
         "discount": discount,
-        "required_points": discount * CLUB_DCP_PER_RUBLE,
+        "required_points": discount * dcp_per_ruble,
         "eligible_subtotal": eligible_subtotal,
         "eligible_gross_profit": eligible_gross_profit,
         "available": available,
@@ -497,10 +501,11 @@ async def _cart(uid: int) -> dict:
         redemption = await session.get(CartClubRedemption, uid)
         subtotal = round(sum(float(i["price"]) * int(i.get("quantity", 1)) for i in items), 2)
         stored_points = int(redemption.points or 0) if redemption else 0
+        club_config = await _club_config(session)
         club_offer = _club_discount_for_cart([
             {"price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "quantity": int(item.quantity or 1)}
             for item, p in rows
-        ], subtotal)
+        ], subtotal, club_config)
         required_points = int(club_offer["required_points"])
         can_redeem = bool(club_offer["available"] and balance >= required_points and not codes)
         applied_points = required_points if can_redeem and stored_points == required_points else 0
@@ -533,7 +538,7 @@ async def _cart(uid: int) -> dict:
             "club_eligible_subtotal": float(club_offer["eligible_subtotal"]),
             "club_can_redeem": can_redeem,
             "club_unavailable_reason": unavailable_reason,
-            "club_min_order": CLUB_MIN_ORDER, "club_dcp_per_ruble": CLUB_DCP_PER_RUBLE,
+            "club_min_order": int(club_config.get("economy", {}).get("min_order", CLUB_MIN_ORDER)), "club_dcp_per_ruble": int(club_config.get("economy", {}).get("dcp_per_ruble", CLUB_DCP_PER_RUBLE)),
         }
 
 
@@ -765,7 +770,7 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         if dcp_spent:
             if codes:
                 raise HTTPException(409, "DCP нельзя совмещать с обычными промокодами.")
-            club_offer = _club_discount_for_cart(items, totals["subtotal"])
+            club_offer = _club_discount_for_cart(items, totals["subtotal"], await _club_config(session))
             required_points = int(club_offer["required_points"])
             if not club_offer["available"] or dcp_spent != required_points:
                 raise HTTPException(409, "Условия фиксированной скидки DSS CLUB изменились. Обнови корзину.")
