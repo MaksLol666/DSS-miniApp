@@ -1015,11 +1015,18 @@ def _club_period(task, now):
 
 
 async def _club_task_count(session, user_id: int, task, start) -> int:
-    value = (await session.execute(
-        select(func.count(func.distinct(OrderStatusHistory.order_id)))
-        .join(Order, Order.id == OrderStatusHistory.order_id)
-        .where(Order.user_id == user_id, OrderStatusHistory.status == "completed", OrderStatusHistory.created_at >= start)
-    )).scalar() or 0
+    if task.event_type == "reviews":
+        value = (await session.execute(
+            select(func.count(Review.id)).where(
+                Review.user_id == user_id, Review.status == "published", Review.published_at >= start
+            )
+        )).scalar() or 0
+    else:
+        value = (await session.execute(
+            select(func.count(func.distinct(OrderStatusHistory.order_id)))
+            .join(Order, Order.id == OrderStatusHistory.order_id)
+            .where(Order.user_id == user_id, OrderStatusHistory.status == "completed", OrderStatusHistory.created_at >= start)
+        )).scalar() or 0
     return int(value)
 
 
@@ -1224,15 +1231,30 @@ async def admin_club_task_update(task_key: str, data: dict, user: dict = Depends
         task = await session.get(ClubTaskConfig, task_key)
         if not task:
             raise HTTPException(404, "Задание не найдено.")
+        if "title" in data:
+            title = str(data["title"]).strip()
+            if not title or len(title) > 96:
+                raise HTTPException(400, "Название задания должно быть от 1 до 96 символов.")
+            task.title = title
+        if "description" in data:
+            task.description = str(data["description"]).strip()[:256]
+        if "period" in data:
+            if data["period"] not in ("daily", "weekly"):
+                raise HTTPException(400, "Период должен быть daily или weekly.")
+            task.period = data["period"]
+        if "event_type" in data:
+            if data["event_type"] not in ("orders", "reviews"):
+                raise HTTPException(400, "Тип события должен быть orders или reviews.")
+            task.event_type = data["event_type"]
         if "reward" in data:
             reward = int(data["reward"])
-            if reward < 0 or reward > 500:
-                raise HTTPException(400, "Награда должна быть от 0 до 500 DCP.")
+            if reward < 0 or reward > 100000:
+                raise HTTPException(400, "Награда должна быть от 0 до 100000 DCP.")
             task.reward = reward
         if "target" in data:
             target = int(data["target"])
-            if target < 1 or target > 100:
-                raise HTTPException(400, "Цель должна быть от 1 до 100.")
+            if target < 1 or target > 100000:
+                raise HTTPException(400, "Цель должна быть от 1 до 100000.")
             task.target = target
         if "active" in data:
             task.active = bool(data["active"])
@@ -1251,8 +1273,8 @@ async def admin_club_task_create(data: dict, user: dict = Depends(admin_user)):
         raise HTTPException(400, "Укажи уникальный ключ и название задания.")
     if period not in ("daily", "weekly"):
         raise HTTPException(400, "Период должен быть daily или weekly.")
-    if event_type not in ("orders", "referrals", "reviews"):
-        raise HTTPException(400, "Поддерживаются задания по заказам, рефералам и отзывам.")
+    if event_type not in ("orders", "reviews"):
+        raise HTTPException(400, "Пока доступны задания по завершённым заказам и опубликованным отзывам.")
     target = int(data.get("target", 1))
     reward = int(data.get("reward", 0))
     if not 1 <= target <= 100000 or not 0 <= reward <= 100000:
