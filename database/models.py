@@ -245,3 +245,31 @@ class ClubSeasonReward(Base):
     title: Mapped[str] = mapped_column(String(160))
     rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ClubSetting(Base):
+    __tablename__ = "club_settings"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(20000), default="{}")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ClubCosmetic(Base):
+    __tablename__ = "club_cosmetics"
+    key: Mapped[str] = mapped_column(String(48), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(96))
+    description: Mapped[str] = mapped_column(String(256), default="")
+    icon: Mapped[str] = mapped_column(String(32), default="✦")
+    rarity: Mapped[str] = mapped_column(String(16), default="common")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ClubUserCosmetic(Base):
+    __tablename__ = "club_user_cosmetics"
+    __table_args__ = (UniqueConstraint("user_id", "cosmetic_key", name="uq_club_user_cosmetic"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
+    cosmetic_key: Mapped[str] = mapped_column(String(48), ForeignKey("club_cosmetics.key"))
+    granted_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
