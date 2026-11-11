@@ -539,7 +539,7 @@ async def _cart(uid: int) -> dict:
             "club_eligible_subtotal": float(club_offer["eligible_subtotal"]),
             "club_can_redeem": can_redeem,
             "club_unavailable_reason": unavailable_reason,
-            "club_min_order": int(club_config.get("economy", {}).get("min_order", CLUB_MIN_ORDER)), "club_dcp_per_ruble": int(club_config.get("economy", {}).get("dcp_per_ruble", CLUB_DCP_PER_RUBLE)),
+            "club_min_order": int(club_config.get("economy", {}).get("min_order", CLUB_MIN_ORDER)), "club_min_product_price": int(club_config.get("economy", {}).get("min_product_price", CLUB_MIN_PRODUCT_PRICE)), "club_dcp_per_ruble": int(club_config.get("economy", {}).get("dcp_per_ruble", CLUB_DCP_PER_RUBLE)),
         }
 
 
