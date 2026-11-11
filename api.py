@@ -1750,14 +1750,17 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
         if new_status == "completed":
             if buyer:
                 buyer.balance = float(buyer.balance or 0) + float(order.total)
-                earned = await _award_club_dcp(session, buyer.id, 100, f"order:{order.id}:completed", "Завершённый заказ")
-                season_earned = await _award_season_points(session, buyer.id, 10, f"season:order:{order.id}", "Завершённый заказ")
+                club_economy = (await _club_config(session)).get("economy", {})
+                order_dcp = int(club_economy.get("order_dcp", 100))
+                order_sp = int(club_economy.get("order_sp", 10))
+                earned = await _award_club_dcp(session, buyer.id, order_dcp, f"order:{order.id}:completed", "Завершённый заказ")
+                season_earned = await _award_season_points(session, buyer.id, order_sp, f"season:order:{order.id}", "Завершённый заказ")
                 if earned:
-                    notifications.append((buyer.id, "💜 DSS CLUB: +100 DCP за завершённый заказ."))
+                    notifications.append((buyer.id, f"💜 DSS CLUB: +{earned} DCP за завершённый заказ."))
                 if season_earned:
-                    notifications.append((buyer.id, "❄️ DSS CLUB: +10 сезонных очков SP за заказ."))
+                    notifications.append((buyer.id, f"❄️ DSS CLUB: +{season_earned} сезонных очков SP за заказ."))
                 if not buyer.first_purchase_done:
-                    first_bonus = await _award_club_dcp(session, buyer.id, 200, f"user:{buyer.id}:first-order", "Бонус за первую покупку")
+                    first_bonus = await _award_club_dcp(session, buyer.id, int(club_economy.get("first_order_dcp", 200)), f"user:{buyer.id}:first-order", "Бонус за первую покупку")
                     if first_bonus:
                         notifications.append((buyer.id, "🎉 DSS CLUB: +200 DCP за первую покупку!"))
                     if buyer.referrer_id:
@@ -1768,8 +1771,8 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                         milestone_code = None
                         if referrer:
                             referrer.referrals_count = int(referrer.referrals_count or 0) + 1
-                            referral_dcp = await _award_club_dcp(session, ref_id, 150, f"referral:first-order:{buyer.id}", "Приглашённый завершил первую покупку")
-                            referral_sp = await _award_season_points(session, ref_id, 25, f"season:referral:{buyer.id}", "Новый приглашённый завершил покупку")
+                            referral_dcp = await _award_club_dcp(session, ref_id, int(club_economy.get("referral_dcp", 150)), f"referral:first-order:{buyer.id}", "Приглашённый завершил первую покупку")
+                            referral_sp = await _award_season_points(session, ref_id, int(club_economy.get("referral_sp", 25)), f"season:referral:{buyer.id}", "Новый приглашённый завершил покупку")
                             if referral_dcp:
                                 notifications.append((ref_id, "👥 DSS CLUB: +150 DCP — приглашённый совершил первую покупку."))
                             if referral_sp:
