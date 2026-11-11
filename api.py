@@ -1540,6 +1540,22 @@ async def admin_club_adjust_balance(user_id: int, data: dict, user: dict = Depen
     return {"ok": True, "balance": new_balance}
 
 
+@app.delete("/api/admin/club/users/{user_id}/cosmetics/{cosmetic_key}")
+async def admin_club_revoke_cosmetic(user_id: int, cosmetic_key: str, user: dict = Depends(admin_user)):
+    async with SessionLocal() as session:
+        await session.execute(delete(ClubUserCosmetic).where(
+            ClubUserCosmetic.user_id == user_id, ClubUserCosmetic.cosmetic_key == cosmetic_key
+        ))
+        await session.execute(delete(ClubCosmeticLoadout).where(
+            ClubCosmeticLoadout.user_id == user_id, ClubCosmeticLoadout.cosmetic_key == cosmetic_key
+        ))
+        selection = await session.get(ClubTitleSelection, user_id)
+        if selection and selection.title_key == cosmetic_key:
+            await session.delete(selection)
+        await session.commit()
+    return {"ok": True}
+
+
 @app.post("/api/admin/club/users/{user_id}/season-points")
 async def admin_club_adjust_season_points(user_id: int, data: dict, user: dict = Depends(admin_user)):
     delta = int(data.get("amount", 0))
