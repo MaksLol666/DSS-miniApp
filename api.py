@@ -1204,7 +1204,6 @@ async def club_activities(user: dict = Depends(current_user)):
             count = await _club_task_count(session, uid, task, start)
             task_data.append({"key": task.key, "title": task.title, "description": task.description, "period": task.period,
                 "target": int(task.target), "reward": int(task.reward), "progress": min(count, int(task.target)), "completed": count >= int(task.target)})
-        await session.commit()
         config = await _club_config(session)
         cosmetics = (await session.execute(
             select(ClubCosmetic)
