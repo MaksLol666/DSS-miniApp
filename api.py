@@ -931,6 +931,7 @@ CLUB_DEFAULT_CONFIG = {
     "levels": CLUB_LEVELS,
     "achievements": CLUB_ACHIEVEMENTS,
     "season": {
+        "title": "Season 01 · Новый год", "title_prefix": "Season",
         "first_start": "2026-11-30T21:00:00", "length_days": 30,
         "personal_rewards": SEASON_PERSONAL_REWARDS, "top_rewards": SEASON_TOP_REWARDS
     }
@@ -1105,7 +1106,7 @@ async def _ensure_season(session, now: datetime | None = None):
     first_end = first_start + timedelta(days=season_length)
     first = await session.get(ClubSeason, 1)
     if first is None:
-        first = ClubSeason(season_number=1, title="Season 01 · Новый год",
+        first = ClubSeason(season_number=1, title=str(season_config.get("title", "Season 01 · Новый год"))[:96],
                            starts_at=first_start, ends_at=first_end)
         session.add(first)
         await session.flush()
@@ -1117,7 +1118,7 @@ async def _ensure_season(session, now: datetime | None = None):
         current = await session.get(ClubSeason, number)
         if current is None:
             starts_at = first_start + timedelta(days=season_length * (number - 1))
-            current = ClubSeason(season_number=number, title=f"Season {number:02d}",
+            current = ClubSeason(season_number=number, title=f"{str(season_config.get('title_prefix', 'Season'))[:40]} {number:02d}",
                                  starts_at=starts_at, ends_at=starts_at + timedelta(days=season_length))
             session.add(current)
             await session.flush()
@@ -1476,6 +1477,16 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
             reward["title"] = str(reward.get("title", ""))[:160]
             if not reward["key"] or not reward["title"]:
                 raise HTTPException(400, "У каждой награды рейтинга нужны ключ и название.")
+        season_row = await session.get(ClubSeason, 1)
+        if season_row is not None:
+            has_points = (await session.execute(select(ClubSeasonPoint.id).where(
+                ClubSeasonPoint.season_number == 1
+            ).limit(1))).first()
+            if not has_points:
+                first_start = datetime.fromisoformat(str(season.get("first_start", SEASON_FIRST_START.isoformat())))
+                season_row.starts_at = first_start
+                season_row.ends_at = first_start + timedelta(days=season["length_days"])
+                season_row.title = str(season.get("title", season_row.title))[:96]
         await _save_club_config(session, current)
         await session.commit()
         return {"ok": True, "config": current}
@@ -1506,6 +1517,30 @@ async def admin_club_adjust_balance(user_id: int, data: dict, user: dict = Depen
             kind="admin_adjust", amount=delta, balance_after=new_balance, reason=reason))
         await session.commit()
     return {"ok": True, "balance": new_balance}
+
+
+@app.post("/api/admin/club/users/{user_id}/season-points")
+async def admin_club_adjust_season_points(user_id: int, data: dict, user: dict = Depends(admin_user)):
+    delta = int(data.get("amount", 0))
+    reason = str(data.get("reason", "")).strip()[:160]
+    if not delta or abs(delta) > 10000000 or not reason:
+        raise HTTPException(400, "Укажи изменение сезонных очков и причину.")
+    async with SessionLocal() as session:
+        if not await session.get(User, user_id):
+            raise HTTPException(404, "Пользователь не найден.")
+        season, active = await _ensure_season(session)
+        if not active:
+            raise HTTPException(409, "Сейчас нет активного сезона.")
+        current = int((await session.execute(select(func.coalesce(func.sum(ClubSeasonPoint.amount), 0)).where(
+            ClubSeasonPoint.user_id == user_id, ClubSeasonPoint.season_number == season.season_number
+        ))).scalar() or 0)
+        if current + delta < 0:
+            raise HTTPException(409, "Нельзя списать больше сезонных очков, чем есть у пользователя.")
+        session.add(ClubSeasonPoint(user_id=user_id, season_number=season.season_number,
+            event_key=f"admin-season-adjust:{user_id}:{secrets.token_hex(8)}",
+            amount=delta, reason=reason))
+        await session.commit()
+    return {"ok": True, "season_number": season.season_number, "points": current + delta}
 
 
 @app.get("/api/admin/club/cosmetics")
