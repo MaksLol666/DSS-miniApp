@@ -26,7 +26,7 @@ from config import (
     REFERRAL_BONUS_PERCENT, REFERRAL_MILESTONE, REFERRAL_MILESTONE_DISCOUNT,
 )
 from database.db import SessionLocal, engine, init_db
-from database.models import CartClubRedemption, CartItem, CartPromo, Category, ClubAccount, ClubAchievementUnlock, ClubTaskConfig, ClubTaskProgress, ClubTitleSelection, ClubTransaction, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User, ClubSeason, ClubSeasonPoint, ClubSeasonReward, ClubSetting, ClubCosmetic, ClubUserCosmetic
+from database.models import CartClubRedemption, CartItem, CartPromo, Category, ClubAccount, ClubAchievementUnlock, ClubTaskConfig, ClubTaskProgress, ClubTitleSelection, ClubTransaction, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User, ClubSeason, ClubSeasonPoint, ClubSeasonReward, ClubSetting, ClubCosmetic, ClubUserCosmetic, ClubCosmeticLoadout
 from image_utils import optimize_product_image
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -1206,16 +1206,22 @@ async def club_activities(user: dict = Depends(current_user)):
         await session.commit()
         config = await _club_config(session)
         cosmetics = (await session.execute(
-            select(ClubCosmetic, ClubUserCosmetic.id)
+            select(ClubCosmetic)
             .join(ClubUserCosmetic, ClubUserCosmetic.cosmetic_key == ClubCosmetic.key)
             .where(ClubUserCosmetic.user_id == uid, ClubCosmetic.active.is_(True))
             .order_by(ClubCosmetic.kind, ClubCosmetic.title)
-        )).all()
+        )).scalars().all()
+        loadout = (await session.execute(select(ClubCosmeticLoadout).where(
+            ClubCosmeticLoadout.user_id == uid
+        ))).scalars().all()
+        equipped_by_kind = {x.kind: x.cosmetic_key for x in loadout}
+        await session.commit()
         return {"achievements": [{**item, "unlocked": item["key"] in unlocked}
                     for item in config.get("achievements", CLUB_ACHIEVEMENTS) if item.get("active", True)],
                 "tasks": task_data, "selected_title": selected.title_key if selected else None,
                 "cosmetics": [{"key": c.key, "kind": c.kind, "title": c.title, "description": c.description,
-                    "icon": c.icon, "rarity": c.rarity} for c, _ in cosmetics]}
+                    "icon": c.icon, "rarity": c.rarity, "equipped": equipped_by_kind.get(c.kind) == c.key}
+                    for c in cosmetics]}
 
 
 @app.post("/api/club/title")
@@ -1243,6 +1249,35 @@ async def club_select_title(data: dict, user: dict = Depends(current_user)):
             selection.title_key = key
         await session.commit()
     return {"ok": True, "selected_title": key}
+
+
+@app.post("/api/club/cosmetic/equip")
+async def club_equip_cosmetic(data: dict, user: dict = Depends(current_user)):
+    key = str(data.get("key", "")).strip()
+    async with SessionLocal() as session:
+        cosmetic = await session.get(ClubCosmetic, key)
+        if not cosmetic or not cosmetic.active:
+            raise HTTPException(404, "Косметический предмет не найден.")
+        owned = (await session.execute(select(ClubUserCosmetic.id).where(
+            ClubUserCosmetic.user_id == user["id"], ClubUserCosmetic.cosmetic_key == key
+        ))).first()
+        if not owned:
+            raise HTTPException(403, "Этот предмет ещё не получен.")
+        loadout = (await session.execute(select(ClubCosmeticLoadout).where(
+            ClubCosmeticLoadout.user_id == user["id"], ClubCosmeticLoadout.kind == cosmetic.kind
+        ))).scalar_one_or_none()
+        if loadout is None:
+            session.add(ClubCosmeticLoadout(user_id=user["id"], kind=cosmetic.kind, cosmetic_key=key))
+        else:
+            loadout.cosmetic_key = key
+        if cosmetic.kind == "title":
+            selection = await session.get(ClubTitleSelection, user["id"])
+            if selection is None:
+                session.add(ClubTitleSelection(user_id=user["id"], title_key=key))
+            else:
+                selection.title_key = key
+        await session.commit()
+    return {"ok": True, "equipped": key, "kind": cosmetic.kind}
 
 
 @app.get("/api/admin/club/tasks")
@@ -1528,6 +1563,7 @@ async def admin_club_cosmetic_delete(cosmetic_key: str, user: dict = Depends(adm
         if not item:
             raise HTTPException(404, "Косметика не найдена.")
         await session.execute(delete(ClubUserCosmetic).where(ClubUserCosmetic.cosmetic_key == cosmetic_key))
+        await session.execute(delete(ClubCosmeticLoadout).where(ClubCosmeticLoadout.cosmetic_key == cosmetic_key))
         await session.delete(item)
         await session.commit()
     return {"ok": True}
