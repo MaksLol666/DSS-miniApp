@@ -1249,7 +1249,7 @@ async def admin_club_tasks(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         await _ensure_club_tasks(session)
         rows = (await session.execute(select(ClubTaskConfig).order_by(ClubTaskConfig.period, ClubTaskConfig.key))).scalars().all()
-        result = [{"key": t.key, "title": t.title, "description": t.description, "period": t.period, "target": int(t.target), "reward": int(t.reward), "active": bool(t.active)} for t in rows]
+        result = [{"key": t.key, "title": t.title, "description": t.description, "period": t.period, "event_type": t.event_type, "target": int(t.target), "reward": int(t.reward), "active": bool(t.active)} for t in rows]
         await session.commit()
         return result
 
@@ -1486,6 +1486,7 @@ async def admin_club_cosmetic_delete(cosmetic_key: str, user: dict = Depends(adm
         item = await session.get(ClubCosmetic, cosmetic_key)
         if not item:
             raise HTTPException(404, "Косметика не найдена.")
+        await session.execute(delete(ClubUserCosmetic).where(ClubUserCosmetic.cosmetic_key == cosmetic_key))
         await session.delete(item)
         await session.commit()
     return {"ok": True}
