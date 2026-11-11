@@ -437,6 +437,9 @@ function renderAdmin() {
     const economy = cfg.economy || {};
     body = '<div class="card"><b>Экономика и правила DSS CLUB</b><p class="item-sub">Изменяй бонусы, курсы DCP, пороги обмена, уровни, достижения и сезонные награды. Настройки сохраняются в базе данных.</p><form id="club-config-form"><label class="field-label">Полная конфигурация клуба (JSON)</label><textarea class="field" name="config_json" rows="18" spellcheck="false" style="font-family:monospace;font-size:12px;min-height:300px">' + esc(JSON.stringify(cfg, null, 2)) + '</textarea><button class="primary" type="submit" style="margin-top:10px">Сохранить настройки DSS CLUB</button></form></div>' +
       '<div class="card"><b>Быстрая настройка экономики</b><form id="club-economy-form"><div class="form-row"><div><label class="field-label">DCP за заказ</label><input class="field" name="order_dcp" type="number" min="0" value="' + Number(economy.order_dcp || 0) + '"></div><div><label class="field-label">Бонус за первую покупку</label><input class="field" name="first_order_dcp" type="number" min="0" value="' + Number(economy.first_order_dcp || 0) + '"></div></div><div class="form-row"><div><label class="field-label">DCP за реферала</label><input class="field" name="referral_dcp" type="number" min="0" value="' + Number(economy.referral_dcp || 0) + '"></div><div><label class="field-label">Курс DCP за 1 ₽ скидки</label><input class="field" name="dcp_per_ruble" type="number" min="1" value="' + Number(economy.dcp_per_ruble || 100) + '"></div></div><div class="form-row"><div><label class="field-label">SP за заказ</label><input class="field" name="order_sp" type="number" min="0" value="' + Number(economy.order_sp || 0) + '"></div><div><label class="field-label">SP за реферала</label><input class="field" name="referral_sp" type="number" min="0" value="' + Number(economy.referral_sp || 0) + '"></div></div><div class="form-row"><div><label class="field-label">SP за ежедневное задание</label><input class="field" name="daily_task_sp" type="number" min="0" value="' + Number(economy.daily_task_sp || 0) + '"></div><div><label class="field-label">SP за еженедельное задание</label><input class="field" name="weekly_task_sp" type="number" min="0" value="' + Number(economy.weekly_task_sp || 0) + '"></div></div><div class="form-row"><div><label class="field-label">Минимальная корзина для обмена, ₽</label><input class="field" name="min_order" type="number" min="0" value="' + Number(economy.min_order || 0) + '"></div><div><label class="field-label">Минимальная цена товара, ₽</label><input class="field" name="min_product_price" type="number" min="0" value="' + Number(economy.min_product_price || 0) + '"></div></div><label class="field-label">Таблица скидок: сумма корзины:скидка (через запятую)</label><input class="field" name="redemption_tiers" value="' + esc((economy.redemption_tiers || []).map(x => x.join(':')).join(', ')) + '" placeholder="500:100, 1000:150"><label class="field-label">Рубежи заказов: количество:DCP</label><input class="field" name="order_milestones" value="' + esc((economy.order_milestones || []).map(x => x.join(':')).join(', ')) + '" placeholder="5:100, 10:250"><label class="field-label">Рубежи рефералов: количество:DCP</label><input class="field" name="referral_milestones" value="' + esc((economy.referral_milestones || []).map(x => x.join(':')).join(', ')) + '" placeholder="5:300, 10:700"><button class="primary" type="submit" style="margin-top:10px">Сохранить экономику</button></form></div>' +
+      '<div class="card"><b>Уровни DSS CLUB</b><form id="club-level-form"><label class="field-label">Код уровня (латиница)</label><input class="field" name="code" maxlength="32" pattern="[a-zA-Z0-9_]+" required placeholder="ELITE"><label class="field-label">Название уровня</label><input class="field" name="title" maxlength="48" required><div class="form-row"><div><label class="field-label">Завершённые заказы</label><input class="field" name="orders" type="number" min="0" value="0" required></div><div><label class="field-label">Lifetime DCP</label><input class="field" name="points" type="number" min="0" value="0" required></div></div><label class="field-label">Купившие рефералы</label><input class="field" name="referrals" type="number" min="0" value="0" required><label class="field-label">Привилегии (разделяй символом |)</label><input class="field" name="perks" maxlength="1000" placeholder="Эксклюзивный значок | Ранний доступ"><button class="primary" type="submit" style="margin-top:10px">Добавить уровень</button></form></div>' +
+      '<div class="section-head"><h3 class="section-title">Текущие уровни</h3></div>' +
+      (cfg.levels || []).map(x => '<article class="list-card"><div class="row"><b>' + esc(x.title) + '</b><span class="item-sub">' + esc(x.code) + '</span></div><div class="item-sub">' + esc(x.orders) + ' заказов · ' + esc(x.points) + ' Lifetime DCP · ' + esc(x.referrals || 0) + ' рефералов</div><button class="danger" data-action="delete-club-level" data-key="' + esc(x.code) + '" style="margin-top:8px">Удалить уровень</button></article>').join('') +
       '<div class="card"><b>Создать достижение</b><form id="club-achievement-form"><label class="field-label">Ключ (латиница)</label><input class="field" name="key" maxlength="48" pattern="[a-zA-Z0-9_]+" required placeholder="ten_orders"><label class="field-label">Название</label><input class="field" name="title" maxlength="96" required><label class="field-label">Описание</label><input class="field" name="description" maxlength="256" required><div class="form-row"><div><label class="field-label">Условие</label><select class="field" name="metric"><option value="orders">Завершённые заказы</option><option value="referrals">Купившие рефералы</option><option value="reviews">Опубликованные отзывы</option></select></div><div><label class="field-label">Количество</label><input class="field" name="target" type="number" min="1" max="1000000" value="1" required></div></div><div class="form-row"><div><label class="field-label">Награда DCP</label><input class="field" name="reward" type="number" min="0" max="1000000" value="0" required></div><div><label class="field-label">Косметическая награда</label><select class="field" name="reward_type"><option value="badge">Значок</option><option value="title">Титул</option></select></div></div><label class="field-label">Иконка</label><input class="field" name="icon" maxlength="16" value="🏆"><button class="primary" type="submit" style="margin-top:10px">Создать достижение</button></form></div>' +
       '<div class="section-head"><h3 class="section-title">Достижения</h3></div>' +
       (cfg.achievements || []).map(x => '<article class="list-card"><div class="row"><b>' + esc(x.icon || '✦') + ' ' + esc(x.title) + '</b><span class="item-sub">' + esc(x.metric) + ' · ' + esc(x.target) + '</span></div><div class="item-sub">' + esc(x.key) + ' · +' + esc(x.reward || 0) + ' DCP · ' + (x.active === false ? 'выключено' : 'активно') + '</div><button class="danger" data-action="delete-club-achievement" data-key="' + esc(x.key) + '" style="margin-top:8px">Удалить достижение</button></article>').join('') +
@@ -633,6 +636,17 @@ async function action(button) {
     catch (error) { toast(error.message); }
     return;
   }
+  if (name === 'delete-club-level') {
+    if (!confirm('Удалить уровень из системы?')) return;
+    try {
+      const config = state.adminClubConfig || {};
+      config.levels = (config.levels || []).filter(x => x.code !== button.dataset.key);
+      if (!config.levels.length) throw new Error('В клубе должен остаться хотя бы один уровень.');
+      await api('/api/admin/club/config', { method: 'PUT', body: JSON.stringify(config) });
+      await loadAdminTab('club'); render(); toast('Уровень удалён');
+    } catch (error) { toast(error.message); }
+    return;
+  }
   if (name === 'delete-club-achievement') {
     if (!confirm('Удалить достижение из правил клуба? Уже полученные награды и записи пользователей останутся в истории.')) return;
     try {
@@ -794,6 +808,19 @@ document.addEventListener('submit', async event => {
       config.economy = economy;
       await api('/api/admin/club/config', { method: 'PUT', body: JSON.stringify(config) });
       await loadAdminTab('club'); render(); toast('Экономика DSS CLUB обновлена');
+    } else if (form.id === 'club-level-form') {
+      const config = state.adminClubConfig || {};
+      config.levels = config.levels || [];
+      const code = String(data.get('code') || '').trim().toUpperCase();
+      if (config.levels.some(x => x.code === code)) throw new Error('Уровень с таким кодом уже существует.');
+      config.levels.push({
+        code, title: String(data.get('title') || '').trim(),
+        orders: Number(data.get('orders')), points: Number(data.get('points')),
+        referrals: Number(data.get('referrals')),
+        perks: String(data.get('perks') || '').split('|').map(x => x.trim()).filter(Boolean)
+      });
+      await api('/api/admin/club/config', { method: 'PUT', body: JSON.stringify(config) });
+      await loadAdminTab('club'); render(); toast('Уровень добавлен');
     } else if (form.id === 'club-achievement-form') {
       const config = state.adminClubConfig || {};
       config.achievements = config.achievements || [];
