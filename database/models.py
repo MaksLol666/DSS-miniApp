@@ -273,3 +273,13 @@ class ClubUserCosmetic(Base):
     cosmetic_key: Mapped[str] = mapped_column(String(48), ForeignKey("club_cosmetics.key"))
     granted_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ClubCosmeticLoadout(Base):
+    __tablename__ = "club_cosmetic_loadouts"
+    __table_args__ = (UniqueConstraint("user_id", "kind", name="uq_club_cosmetic_loadout_user_kind"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    cosmetic_key: Mapped[str] = mapped_column(String(48), ForeignKey("club_cosmetics.key"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
