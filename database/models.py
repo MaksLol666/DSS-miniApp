@@ -147,6 +147,7 @@ class ClubAccount(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), primary_key=True)
     balance: Mapped[int] = mapped_column(Integer, default=0)
     lifetime_earned: Mapped[int] = mapped_column(Integer, default=0)
+    orders_adjustment: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -263,6 +264,12 @@ class ClubCosmetic(Base):
     icon: Mapped[str] = mapped_column(String(32), default="✦")
     rarity: Mapped[str] = mapped_column(String(16), default="common")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    card_primary: Mapped[str] = mapped_column(String(7), default="#26133b")
+    card_secondary: Mapped[str] = mapped_column(String(7), default="#0b0812")
+    card_accent: Mapped[str] = mapped_column(String(7), default="#c49aff")
+    card_animation: Mapped[str] = mapped_column(String(16), default="pulse")
+    requirement_type: Mapped[str] = mapped_column(String(24), default="none")
+    requirement_value: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class ClubUserCosmetic(Base):
