@@ -204,7 +204,20 @@ function renderNav() {
   }
   return html + '</div>';
 }
+function applyClubTheme() {
+  const tone = clubLevelMeta(state.club && state.club.level_title).tone;
+  document.documentElement.dataset.clubTheme = tone;
+  try {
+    if (tg) {
+      const colors = { member: '#0b0b16', active: '#07140f', premium: '#100817', vip: '#171006', legend: '#17070d', ambassador: '#100819' };
+      const color = colors[tone] || '#0b0b16';
+      tg.setHeaderColor(color);
+      tg.setBackgroundColor(color);
+    }
+  } catch (_e) {}
+}
 function render() {
+  applyClubTheme();
   document.getElementById('topbar').innerHTML = renderHeader();
   const nav = document.getElementById('bottomnav');
   nav.innerHTML = renderNav();
