@@ -142,3 +142,43 @@ main{padding-bottom:12px}.hero{position:relative;overflow:hidden;border:1px soli
 .club-achievement-copy{min-width:0;flex:1}
 .club-achievement-state{font-size:8px;letter-spacing:.8px;font-weight:900;color:#a8e8c0;white-space:nowrap}
 @media(max-width:390px){.club-hero{padding:18px 15px}.club-hero-seal{width:64px;height:64px;flex-basis:64px}.club-level{padding:11px;min-height:150px}.season-rewards{grid-template-columns:1fr}.club-title-card{grid-template-columns:78px minmax(0,1fr);gap:11px}.club-title-art{height:96px}}
+
+
+/* DSS CLUB — six bespoke neon membership cards */
+.dss-membership-card{--club-accent:#aebeff;--club-glow:rgba(139,156,255,.48);position:relative;isolation:isolate;overflow:hidden;min-height:260px;margin:10px 0 18px;padding:19px 18px 16px;border:1px solid color-mix(in srgb,var(--club-accent) 88%,white);border-radius:25px;background:radial-gradient(ellipse at 88% 8%,var(--club-glow),transparent 37%),linear-gradient(128deg,#080b19 0%,#090a13 54%,#11101b 100%);box-shadow:0 0 12px var(--club-glow),0 0 34px color-mix(in srgb,var(--club-glow) 70%,transparent),inset 0 0 28px color-mix(in srgb,var(--club-accent) 10%,transparent);animation:dss-card-breathe 4.8s ease-in-out infinite}
+.dss-card-member{--club-accent:#c3caff;--club-glow:rgba(130,151,255,.43)}
+.dss-card-active{--club-accent:#48ff9b;--club-glow:rgba(36,255,139,.38)}
+.dss-card-premium{--club-accent:#d64cff;--club-glow:rgba(185,45,255,.45)}
+.dss-card-vip{--club-accent:#ffc45c;--club-glow:rgba(255,166,42,.42)}
+.dss-card-legend{--club-accent:#ff4268;--club-glow:rgba(255,32,75,.43)}
+.dss-card-ambassador{--club-accent:#c49aff;--club-glow:rgba(126,75,255,.5)}
+.dss-card-glow{position:absolute;z-index:-1;inset:-45%;background:linear-gradient(115deg,transparent 38%,color-mix(in srgb,var(--club-accent) 10%,transparent) 49%,transparent 59%);transform:translateX(-32%);animation:dss-card-sheen 8s ease-in-out infinite}
+.dss-card-orbit{position:absolute;z-index:-1;width:210px;height:210px;right:-100px;top:-112px;border:1px solid color-mix(in srgb,var(--club-accent) 52%,transparent);border-radius:50%;box-shadow:0 0 0 14px color-mix(in srgb,var(--club-accent) 5%,transparent),0 0 0 32px color-mix(in srgb,var(--club-accent) 4%,transparent),0 0 30px var(--club-glow)}
+.dss-card-orbit-b{width:145px;height:145px;right:-64px;top:-78px;border-style:dashed;opacity:.55}
+.dss-card-ornament{position:absolute;z-index:-1;inset:0;width:100%;height:100%;fill:none;stroke:var(--club-accent);stroke-width:.8;opacity:.3;filter:drop-shadow(0 0 5px var(--club-glow));pointer-events:none}
+.dss-card-top,.dss-card-main,.dss-card-balance-row,.dss-card-footer{position:relative;z-index:1}
+.dss-card-top{display:flex;justify-content:space-between;align-items:center;color:var(--club-accent);font-size:10px;font-weight:900;letter-spacing:4px}
+.dss-card-edition{font-size:7px;letter-spacing:1.3px;opacity:.7}
+.dss-card-main{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:106px}
+.dss-card-kicker{font-size:8px;letter-spacing:2px;color:color-mix(in srgb,var(--club-accent) 72%,white);font-weight:800}
+.dss-card-level{font-size:clamp(25px,7vw,35px);line-height:1.05;font-weight:1000;font-style:italic;letter-spacing:-1px;color:#fff;text-shadow:0 0 9px var(--club-glow),0 0 25px var(--club-glow);overflow-wrap:anywhere}
+.dss-card-title{font-size:10px;color:#d6d1e4;margin-top:9px;max-width:205px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dss-card-crest-wrap{width:105px;height:100px;flex:0 0 105px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--club-accent) 58%,transparent);border-radius:24px;background:linear-gradient(145deg,color-mix(in srgb,var(--club-accent) 13%,#111),#080a12);box-shadow:inset 0 0 22px var(--club-glow),0 0 22px var(--club-glow);transform:rotate(3deg)}
+.dss-crest{width:91px;height:86px;color:var(--club-accent);filter:drop-shadow(0 0 7px var(--club-glow))}
+.dss-card-balance-row{display:flex;justify-content:space-between;align-items:end;gap:8px;margin-top:5px}
+.dss-card-label{font-size:8px;letter-spacing:1.8px;color:var(--club-accent);opacity:.85}
+.dss-card-balance{font-size:27px;font-weight:950;line-height:1.1;color:#fff;text-shadow:0 0 12px var(--club-glow)}
+.dss-card-balance small{font-size:10px;letter-spacing:1.5px;color:var(--club-accent)}
+.dss-card-status{font-size:7px;letter-spacing:1px;color:var(--club-accent);display:flex;align-items:center;gap:6px;padding:7px 9px;border:1px solid color-mix(in srgb,var(--club-accent) 40%,transparent);border-radius:20px}
+.dss-status-dot{width:5px;height:5px;border-radius:50%;background:var(--club-accent);box-shadow:0 0 8px var(--club-accent)}
+.dss-card-progress{height:4px;margin-top:13px;border-radius:9px;background:#292634;overflow:hidden}
+.dss-card-progress>div{height:100%;background:linear-gradient(90deg,color-mix(in srgb,var(--club-accent) 55%,white),var(--club-accent));box-shadow:0 0 12px var(--club-accent);border-radius:9px;transition:width .8s cubic-bezier(.2,.8,.2,1)}
+.dss-card-footer{display:flex;align-items:center;gap:8px;margin-top:7px;font-size:7px;letter-spacing:1px;color:#a9a4b8}
+.dss-card-footer b{color:var(--club-accent);font-size:9px}
+.dss-card-next{margin-left:auto;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:#c8c1d6}
+.club-card-enter{animation:dss-card-in .72s cubic-bezier(.2,.8,.2,1) both,dss-card-breathe 4.8s ease-in-out .8s infinite}
+@keyframes dss-card-in{from{opacity:0;transform:translateY(17px) scale(.985);filter:blur(5px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
+@keyframes dss-card-breathe{0%,100%{box-shadow:0 0 10px var(--club-glow),0 0 27px color-mix(in srgb,var(--club-glow) 65%,transparent),inset 0 0 24px color-mix(in srgb,var(--club-accent) 8%,transparent)}50%{box-shadow:0 0 17px var(--club-glow),0 0 43px color-mix(in srgb,var(--club-glow) 85%,transparent),inset 0 0 34px color-mix(in srgb,var(--club-accent) 14%,transparent)}}
+@keyframes dss-card-sheen{0%,100%{transform:translateX(-38%)}50%{transform:translateX(38%)}}
+@media(max-width:370px){.dss-membership-card{padding:16px 14px;min-height:250px}.dss-card-crest-wrap{width:82px;height:82px;flex-basis:82px}.dss-crest{width:75px;height:72px}.dss-card-level{font-size:26px}.dss-card-edition{font-size:6px;letter-spacing:.7px}}
+@media(prefers-reduced-motion:reduce){.dss-membership-card,.club-card-enter,.dss-card-glow{animation:none!important}.dss-card-progress>div{transition:none}}
