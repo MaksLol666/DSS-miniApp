@@ -249,3 +249,20 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 .club-title-card{border-color:color-mix(in srgb,var(--neon) 32%,#382747);background:var(--surface);box-shadow:0 12px 30px #0005}
 @media(hover:hover){.nav-button:hover,.chip:hover,.tab:hover,.secondary:hover{border-color:var(--neon);color:#fff}}
 @media(prefers-reduced-motion:reduce){.product-card,.card,.list-card,.nav-button{transition:none!important}}
+
+
+/* Page transitions and focused component polish */
+@keyframes dss-page-arrive{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+.dss-page-enter{animation:dss-page-arrive .28s ease-out both}
+.section-head{scroll-margin-top:16px}
+.product-brand,.item-title{color:#f5efff}
+.product-foot .price{color:#fff;text-shadow:0 0 13px var(--neon-glow)}
+.product-flavor,.item-sub{color:#a99db8}
+.metric{position:relative;overflow:hidden}
+.metric:after{content:"";position:absolute;right:-28px;top:-34px;width:78px;height:78px;border:1px solid var(--neon);border-radius:50%;opacity:.12;box-shadow:0 0 0 10px var(--neon-soft),0 0 18px var(--neon-glow);pointer-events:none}
+.profile-name{color:#fff;text-shadow:0 0 15px var(--neon-glow)}
+.profile-avatar{border:1px solid color-mix(in srgb,var(--neon) 55%,transparent)}
+.admin-tabs,.tabs{scrollbar-width:none}
+.admin-product-grid .field{min-width:0}
+#captcha-widget{border-radius:12px}
+@media(prefers-reduced-motion:reduce){.dss-page-enter{animation:none!important}}
