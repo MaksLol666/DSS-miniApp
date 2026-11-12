@@ -222,6 +222,13 @@ async def _migrate_legacy_columns() -> None:
         ("orders", "club_discount", "REAL DEFAULT 0"),
         ("users", "is_banned", "INTEGER DEFAULT 0"),
         ("users", "is_unreachable", "INTEGER DEFAULT 0"),
+        ("club_accounts", "orders_adjustment", "INTEGER DEFAULT 0"),
+        ("club_cosmetics", "card_primary", "TEXT DEFAULT '#26133b'"),
+        ("club_cosmetics", "card_secondary", "TEXT DEFAULT '#0b0812'"),
+        ("club_cosmetics", "card_accent", "TEXT DEFAULT '#c49aff'"),
+        ("club_cosmetics", "card_animation", "TEXT DEFAULT 'pulse'"),
+        ("club_cosmetics", "requirement_type", "TEXT DEFAULT 'none'"),
+        ("club_cosmetics", "requirement_value", "INTEGER DEFAULT 0"),
     ]
     async with engine.begin() as connection:
         for table, column, sql_type in columns:
@@ -975,7 +982,9 @@ async def _ensure_club_tasks(session):
 
 
 async def _club_metrics(session, user_id: int) -> dict:
-    orders = int((await session.execute(select(func.count(Order.id)).where(Order.user_id == user_id, Order.status == "completed"))).scalar() or 0)
+    actual_orders = int((await session.execute(select(func.count(Order.id)).where(Order.user_id == user_id, Order.status == "completed"))).scalar() or 0)
+    account = await session.get(ClubAccount, user_id)
+    orders = max(0, actual_orders + int(account.orders_adjustment or 0)) if account else actual_orders
     referrals = int((await session.execute(select(func.count(User.id)).where(User.referrer_id == user_id, User.first_purchase_done.is_(True)))).scalar() or 0)
     reviews = int((await session.execute(select(func.count(Review.id)).where(Review.user_id == user_id, Review.status == "published"))).scalar() or 0)
     return {"orders": orders, "referrals": referrals, "reviews": reviews}
@@ -1669,9 +1678,7 @@ async def club_profile(user: dict = Depends(current_user)):
         account = await session.get(ClubAccount, uid)
         balance = int(account.balance or 0) if account else 0
         lifetime = int(account.lifetime_earned or 0) if account else 0
-        orders = int((await session.execute(select(func.count(Order.id)).where(
-            Order.user_id == uid, Order.status == "completed"
-        ))).scalar() or 0)
+        orders = (await _club_metrics(session, uid))["orders"]
         referrals = int((await session.execute(select(func.count(User.id)).where(
             User.referrer_id == uid, User.first_purchase_done.is_(True)
         ))).scalar() or 0)
@@ -1762,7 +1769,7 @@ async def profile(user: dict = Depends(current_user)):
     uid = user["id"]
     async with SessionLocal() as session:
         record = await session.get(User, uid)
-        spent = (await session.execute(select(func.count(Order.id)).where(Order.user_id == uid, Order.status == "completed"))).scalar() or 0
+        spent = (await _club_metrics(session, uid))["orders"]
         promos = (await session.execute(select(func.count(Promocode.code)).where(Promocode.owner_id == uid, Promocode.used.is_(False), Promocode.used_count < Promocode.max_uses))).scalar() or 0
     ref_link = f"https://t.me/{bot.BOT_USERNAME}?start=ref_{uid}" if bot.BOT_USERNAME else ""
     return {"user_id": uid, "username": record.username if record else user.get("username"), "telegram_username": user.get("username") or "", "first_name": user.get("first_name") or "", "last_name": user.get("last_name") or "", "photo_url": user.get("photo_url") or "",
@@ -2152,10 +2159,32 @@ async def admin_users(q: str | None = None, user: dict = Depends(admin_user)):
         rows = (await session.execute(query)).scalars().all()
         result = []
         for u in rows:
-            count = (await session.execute(select(func.count(Order.id)).where(Order.user_id == u.id, Order.status == "completed"))).scalar() or 0
+            count = (await _club_metrics(session, u.id))["orders"]
             promos = (await session.execute(select(func.count(Promocode.code)).where(Promocode.owner_id == u.id, Promocode.used.is_(False), Promocode.used_count < Promocode.max_uses))).scalar() or 0
-            result.append({"id": u.id, "username": u.username, "balance": float(u.balance or 0), "orders_count": int(count), "referrals_count": int(u.referrals_count or 0), "active_promos": int(promos), "is_banned": bool(u.is_banned)})
+            result.append({"id": u.id, "username": u.username, "balance": float(u.balance or 0), "orders_count": int(count), "orders_adjustment": int((await session.get(ClubAccount, u.id)).orders_adjustment or 0) if await session.get(ClubAccount, u.id) else 0, "referrals_count": int(u.referrals_count or 0), "active_promos": int(promos), "is_banned": bool(u.is_banned)})
         return result
+
+
+@app.post("/api/admin/users/{user_id}/orders-adjustment")
+async def admin_adjust_club_orders(user_id: int, data: dict, user: dict = Depends(admin_user)):
+    delta = int(data.get("amount", 0))
+    if not delta or abs(delta) > 100000:
+        raise HTTPException(400, "Укажи изменение количества заказов от -100000 до 100000, кроме нуля.")
+    async with SessionLocal() as session:
+        if not await session.get(User, user_id):
+            raise HTTPException(404, "Пользователь не найден.")
+        account = await session.get(ClubAccount, user_id)
+        if account is None:
+            account = ClubAccount(user_id=user_id, balance=0, lifetime_earned=0, orders_adjustment=0)
+            session.add(account)
+            await session.flush()
+        actual = int((await session.execute(select(func.count(Order.id)).where(Order.user_id == user_id, Order.status == "completed"))).scalar() or 0)
+        next_adjustment = int(account.orders_adjustment or 0) + delta
+        if actual + next_adjustment < 0:
+            raise HTTPException(409, "Итоговое количество клубных заказов не может быть меньше нуля.")
+        account.orders_adjustment = next_adjustment
+        await session.commit()
+    return {"ok": True, "orders_count": actual + next_adjustment, "orders_adjustment": next_adjustment}
 
 
 @app.post("/api/admin/users/{user_id}/ban")
