@@ -325,8 +325,8 @@ function clubLevelMeta(title) {
   const map = {
     MEMBER: { icon: '◇', label: 'STARTER', tone: 'member' },
     ACTIVE: { icon: '✦', label: 'ACTIVE', tone: 'active' },
-    PREMIUM: { icon: '✧', label: 'PREMIUM', tone: 'premium' },
-    VIP: { icon: '♛', label: 'ELITE', tone: 'vip' },
+    PREMIUM: { icon: '♛', label: 'PREMIUM', tone: 'premium' },
+    VIP: { icon: '♛', label: 'VIP', tone: 'vip' },
     LEGEND: { icon: '♜', label: 'LEGEND', tone: 'legend' },
     AMBASSADOR: { icon: '♕', label: 'AMBASSADOR', tone: 'ambassador' }
   };
@@ -350,6 +350,32 @@ function clubAchievementIcon(icon, title) {
   return '✦';
 }
 
+
+function clubCrestSvg(tone) {
+  const marks = {
+    member: '<path d="M52 15 86 49 52 83 18 49Z"/><path d="M52 28 73 49 52 70 31 49Z"/>',
+    active: '<path d="m52 10 10 27 29 2-22 18 8 28-25-16-25 16 8-28-22-18 29-2Z"/><circle cx="52" cy="49" r="38"/>',
+    premium: '<path d="m13 67 8-37 22 20 9-35 10 35 22-20 8 37Z"/><path d="M18 72h68l-7 12H25Z"/><circle cx="52" cy="15" r="5"/>',
+    vip: '<path d="m10 65 10-40 23 26 9-38 9 38 23-26 10 40Z"/><path d="M17 70h70l-8 13H25Z"/><path d="m20 25 8-8 8 8-8 8Z M72 25l8-8 8 8-8 8Z"/>',
+    legend: '<path d="m7 67 9-45 19 27 17-40 17 40 19-27 9 45Z"/><path d="M14 72h76l-9 13H23Z"/><path d="m52 4 7 12-7 12-7-12Z M16 22l8-13 8 13-8 10Z M80 22l8-13 8 13-8 10Z"/>',
+    ambassador: '<path d="m8 69 8-47 18 27 18-43 18 43 18-27 8 47Z"/><path d="M15 73h74l-8 12H23Z"/><path d="M52 6 64 25 52 39 40 25Z"/><path d="m15 22 9-13 9 13-9 10Z M71 22l9-13 9 13-9 10Z"/><path d="M52 43v28 M31 52l-9 13 M73 52l9 13"/>'
+  };
+  return '<svg class="dss-crest dss-crest-' + tone + '" viewBox="0 0 104 96" aria-hidden="true"><defs><linearGradient id="crest-' + tone + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="white"/><stop offset=".45" stop-color="currentColor"/><stop offset="1" stop-color="currentColor"/></linearGradient></defs><g fill="none" stroke="url(#crest-' + tone + ')" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">' + marks[tone] + '</g><circle cx="52" cy="49" r="46" fill="none" stroke="currentColor" opacity=".16"/><circle cx="52" cy="49" r="41" fill="none" stroke="currentColor" opacity=".22" stroke-dasharray="2 5"/></svg>';
+}
+function renderClubMembershipCard(c, selectedTitle) {
+  const meta = clubLevelMeta(c.level_title);
+  const progress = Math.max(0, Math.min(100, Number(c.progress_percent || 0)));
+  const title = selectedTitle ? selectedTitle.title : 'Без титула';
+  return '<section class="dss-membership-card dss-card-' + meta.tone + ' club-card-enter">' +
+    '<div class="dss-card-glow"></div><div class="dss-card-orbit dss-card-orbit-a"></div><div class="dss-card-orbit dss-card-orbit-b"></div>' +
+    '<svg class="dss-card-ornament" viewBox="0 0 360 230" preserveAspectRatio="none" aria-hidden="true"><path d="M-20 180 Q75 100 135 145 T270 75 T390 8"/><path d="M-20 205 Q80 120 145 165 T280 95 T390 30"/><path d="M210 -20 Q180 55 250 90 T330 190"/></svg>' +
+    '<div class="dss-card-top"><span>DSS CLUB</span><span class="dss-card-edition">MEMBERSHIP · EST. DSS</span></div>' +
+    '<div class="dss-card-main"><div class="dss-card-copy"><div class="dss-card-kicker">YOUR STATUS · ' + esc(meta.label) + '</div><div class="dss-card-level">' + esc(c.level_title || 'MEMBER') + '</div><div class="dss-card-title">✦ ' + esc(title) + '</div></div><div class="dss-card-crest-wrap">' + clubCrestSvg(meta.tone) + '</div></div>' +
+    '<div class="dss-card-balance-row"><div><div class="dss-card-label">AVAILABLE BALANCE</div><div class="dss-card-balance">' + esc(c.balance || 0) + '<small> DCP</small></div></div><div class="dss-card-status"><span class="dss-status-dot"></span>' + (c.next_level ? 'IN PROGRESS' : 'MAX STATUS') + '</div></div>' +
+    '<div class="dss-card-progress"><div style="width:' + progress + '%"></div></div><div class="dss-card-footer"><span>LEVEL PROGRESS</span><b>' + progress + '%</b><span class="dss-card-next">' + esc(c.next_level ? 'NEXT · ' + c.next_level : 'TOP MEMBER') + '</span></div>' +
+    '</section>';
+}
+
 function renderClub() {
   const c = state.club || {}, tx = c.transactions || [], activity = state.clubActivities || {}, season = state.season || {};
   const nextText = c.next_level
@@ -369,8 +395,9 @@ function renderClub() {
   const seasonPanel = '<section class="season-panel"><div class="season-orbit"></div><div class="row"><div><div class="eyebrow">DSS CLUB · LIMITED SERIES</div><h2 class="season-title">' + esc(season.title || 'Season 01 · Новый год') + '</h2><div class="season-edition">COLLECT · COMPETE · UNLOCK</div></div><span class="season-status">' + (season.active ? 'АКТИВЕН' : 'СКОРО') + '</span></div><div class="season-meta">' + (season.active ? 'До завершения: ' + esc(season.days_left) + ' дней' : 'Старт: 1 декабря 2026 · 00:00 МСК') + '</div><div class="season-score"><span class="season-score-token">✹</span><strong>' + esc(season.points || 0) + '</strong><span>SEASON POINTS</span></div><div class="season-meta">' + (season.rank ? 'Твоё место: #' + esc(season.rank) : 'Твоё место появится после первых сезонных очков') + ' · Участников: ' + esc(season.participants || 0) + '</div><div class="season-divider"></div><b class="season-subtitle">Личные сезонные награды</b><div class="season-rewards">' + seasonRewards + '</div><div class="season-divider"></div><div class="row"><b class="season-subtitle">TOP-50 сезона</b><span class="season-meta">Награды за места</span></div>' + leaderboard + '</section>';
   const rewardHistory = (season.earned_rewards || []).map(r => '<div class="summary-line"><span>' + esc(r.title) + '<div class="item-sub">Сезон ' + esc(r.season) + (r.rank ? ' · место #' + esc(r.rank) : '') + '</div></span><b>✓</b></div>').join('');
   const cosmeticInventory = cosmetics.map(x => '<article class="list-card"><div class="row"><b>' + esc(x.icon) + ' ' + esc(x.title) + '</b><span class="item-sub">' + esc(x.rarity) + ' · ' + esc(x.kind) + (x.equipped ? ' · НАДЕТО' : '') + '</span></div><div class="item-sub">' + esc(x.description || 'Клубная косметика') + '</div><button class="small-button" data-action="equip-club-cosmetic" data-key="' + esc(x.key) + '" style="margin-top:8px">' + (x.equipped ? '✓ Надето' : 'Надеть') + '</button></article>').join('');
+  const membershipCard = renderClubMembershipCard(c, selectedTitle);
   return '<div class="section-head"><div><h1 class="section-title">DSS CLUB</h1><div class="section-sub">Твой клубный статус и прогресс</div></div><button class="mini-link" data-action="go" data-page="profile">Назад</button></div>' +
-    '<div class="club-hero club-hero-' + clubLevelMeta(c.level_title).tone + '"><div class="club-hero-orbit"></div><div class="club-hero-head"><div><div class="eyebrow">DSS CLUB · MEMBERSHIP</div><div class="club-level-name">' + esc(c.level_title || 'MEMBER') + '</div><div class="club-member-caption">YOUR STATUS · ' + clubLevelMeta(c.level_title).label + '</div></div><div class="club-hero-seal"><span>' + clubLevelMeta(c.level_title).icon + '</span><small>EST. DSS</small></div></div><div class="club-balance-label">ДОСТУПНЫЙ БАЛАНС</div><div class="club-balance"><span class="club-currency-icon">D</span>' + esc(c.balance || 0) + ' <span>DCP</span></div><div class="divider"></div><div class="metric-grid"><div class="metric"><div class="metric-value">' + esc(c.lifetime_earned || 0) + '</div><div class="metric-label">Lifetime DCP</div></div><div class="metric"><div class="metric-value">' + esc(c.completed_orders || 0) + '</div><div class="metric-label">Завершено заказов</div></div></div><div class="item-sub club-next">' + esc(nextText) + '</div><div class="club-progress"><div style="width:' + Math.max(0, Math.min(100, Number(c.progress_percent || 0))) + '%"></div></div><div class="item-sub club-progress-label">Прогресс до следующего уровня · ' + Math.max(0, Math.min(100, Number(c.progress_percent || 0))) + '%</div></div>' +
+    membershipCard +
     '<div class="club-title-card"><div class="club-title-art"><span>' + clubLevelMeta(c.level_title).icon + '</span><small>PERSONAL INSIGNIA</small></div><div class="club-title-info"><div class="item-sub">ТЕКУЩИЙ ТИТУЛ</div><b>' + esc(selectedTitle ? selectedTitle.title : 'Без титула') + '</b><div class="club-perk-heading">ПРИВИЛЕГИИ ' + esc(c.level_title || 'MEMBER') + '</div>' + (perks || '<div class="item-sub">Базовый доступ к клубу</div>') + '</div></div>' +
     seasonPanel +
     '<div class="section-head"><div><h2 class="section-title">Уровни клуба</h2><div class="section-sub">Для перехода нужны все условия уровня</div></div></div><div class="club-level-list">' + levels + '</div>' +
