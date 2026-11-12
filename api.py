@@ -1219,6 +1219,23 @@ async def club_activities(user: dict = Depends(current_user)):
             task_data.append({"key": task.key, "title": task.title, "description": task.description, "period": task.period,
                 "target": int(task.target), "reward": int(task.reward), "progress": min(count, int(task.target)), "completed": count >= int(task.target)})
         config = await _club_config(session)
+        metrics = await _club_metrics(session, uid)
+        account = await session.get(ClubAccount, uid)
+        lifetime = int(account.lifetime_earned or 0) if account else 0
+        card_items = (await session.execute(select(ClubCosmetic).where(
+            ClubCosmetic.kind == "card", ClubCosmetic.active.is_(True)
+        ))).scalars().all()
+        for card in card_items:
+            req_type = card.requirement_type or "none"
+            req_value = int(card.requirement_value or 0)
+            metric_value = {"orders": metrics["orders"], "lifetime_dcp": lifetime, "referrals": metrics["referrals"]}.get(req_type, req_value)
+            if req_type == "none" or metric_value >= req_value:
+                owned_card = (await session.execute(select(ClubUserCosmetic.id).where(
+                    ClubUserCosmetic.user_id == uid, ClubUserCosmetic.cosmetic_key == card.key
+                ))).first()
+                if not owned_card:
+                    session.add(ClubUserCosmetic(user_id=uid, cosmetic_key=card.key, granted_by=None))
+        await session.flush()
         cosmetics = (await session.execute(
             select(ClubCosmetic)
             .join(ClubUserCosmetic, ClubUserCosmetic.cosmetic_key == ClubCosmetic.key)
@@ -1234,7 +1251,10 @@ async def club_activities(user: dict = Depends(current_user)):
                     for item in config.get("achievements", CLUB_ACHIEVEMENTS) if item.get("active", True)],
                 "tasks": task_data, "selected_title": selected.title_key if selected else None,
                 "cosmetics": [{"key": c.key, "kind": c.kind, "title": c.title, "description": c.description,
-                    "icon": c.icon, "rarity": c.rarity, "equipped": equipped_by_kind.get(c.kind) == c.key}
+                    "icon": c.icon, "rarity": c.rarity, "equipped": equipped_by_kind.get(c.kind) == c.key,
+                    "card_primary": c.card_primary, "card_secondary": c.card_secondary, "card_accent": c.card_accent,
+                    "card_animation": c.card_animation, "requirement_type": c.requirement_type,
+                    "requirement_value": int(c.requirement_value or 0)}
                     for c in cosmetics]}
 
 
@@ -1598,7 +1618,10 @@ async def admin_club_cosmetics(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(ClubCosmetic).order_by(ClubCosmetic.kind, ClubCosmetic.key))).scalars().all()
         return [{"key": x.key, "kind": x.kind, "title": x.title, "description": x.description,
-                 "icon": x.icon, "rarity": x.rarity, "active": bool(x.active)} for x in rows]
+                 "icon": x.icon, "rarity": x.rarity, "active": bool(x.active),
+                 "card_primary": x.card_primary, "card_secondary": x.card_secondary, "card_accent": x.card_accent,
+                 "card_animation": x.card_animation, "requirement_type": x.requirement_type,
+                 "requirement_value": int(x.requirement_value or 0)} for x in rows]
 
 
 @app.post("/api/admin/club/cosmetics")
@@ -1611,9 +1634,23 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
     async with SessionLocal() as session:
         if await session.get(ClubCosmetic, key):
             raise HTTPException(409, "Косметика с таким ключом уже существует.")
+        requirement_type = str(data.get("requirement_type", "none"))
+        animation = str(data.get("card_animation", "pulse"))
+        if requirement_type not in ("none", "orders", "lifetime_dcp", "referrals") or animation not in ("none", "pulse", "sheen", "aurora"):
+            raise HTTPException(400, "Некорректное условие получения или анимация карточки.")
+        def valid_hex(value, fallback):
+            value = str(value or fallback).strip()
+            if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                raise HTTPException(400, "Цвет карточки должен быть в формате #RRGGBB.")
+            return value
         session.add(ClubCosmetic(key=key, kind=kind, title=title[:96],
             description=str(data.get("description", ""))[:256], icon=str(data.get("icon", "✦"))[:16],
-            rarity=str(data.get("rarity", "common"))[:16], active=bool(data.get("active", True))))
+            rarity=str(data.get("rarity", "common"))[:16], active=bool(data.get("active", True)),
+            card_primary=valid_hex(data.get("card_primary"), "#26133b"),
+            card_secondary=valid_hex(data.get("card_secondary"), "#0b0812"),
+            card_accent=valid_hex(data.get("card_accent"), "#c49aff"),
+            card_animation=animation, requirement_type=requirement_type,
+            requirement_value=max(0, min(100000000, int(data.get("requirement_value", 0))))))
         await session.commit()
     return {"ok": True, "key": key}
 
@@ -1637,6 +1674,22 @@ async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict =
             item.rarity = str(data["rarity"])[:16]
         if "active" in data:
             item.active = bool(data["active"])
+        for field in ("card_primary", "card_secondary", "card_accent"):
+            if field in data:
+                value = str(data[field]).strip()
+                if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                    raise HTTPException(400, "Цвет карточки должен быть в формате #RRGGBB.")
+                setattr(item, field, value)
+        if "card_animation" in data:
+            if data["card_animation"] not in ("none", "pulse", "sheen", "aurora"):
+                raise HTTPException(400, "Неизвестная анимация карточки.")
+            item.card_animation = data["card_animation"]
+        if "requirement_type" in data:
+            if data["requirement_type"] not in ("none", "orders", "lifetime_dcp", "referrals"):
+                raise HTTPException(400, "Неизвестное условие получения карточки.")
+            item.requirement_type = data["requirement_type"]
+        if "requirement_value" in data:
+            item.requirement_value = max(0, min(100000000, int(data["requirement_value"])))
         await session.commit()
     return {"ok": True}
 
