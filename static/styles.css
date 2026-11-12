@@ -266,3 +266,20 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 .admin-product-grid .field{min-width:0}
 #captcha-widget{border-radius:12px}
 @media(prefers-reduced-motion:reduce){.dss-page-enter{animation:none!important}}
+
+
+/* Exclusive club card designer */
+.exclusive-palette{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}
+.exclusive-palette label{display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 5px;border:1px solid #48315e;border-radius:15px;background:#15101f;color:#cbbbdc;font-size:10px;text-align:center}
+.exclusive-palette input[type=color]{appearance:none;-webkit-appearance:none;width:48px;height:48px;padding:0;border:2px solid #ffffff88;border-radius:50%;overflow:hidden;background:transparent;box-shadow:0 0 15px #a45bff44;cursor:pointer}
+.exclusive-palette input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+.exclusive-palette input[type=color]::-webkit-color-swatch{border:0;border-radius:50%}
+.exclusive-palette input[type=color]::-moz-color-swatch{border:0;border-radius:50%}
+.dss-membership-card[style*="--club-primary"]{background:radial-gradient(ellipse at 88% 8%,var(--club-glow),transparent 37%),linear-gradient(128deg,var(--club-primary),var(--club-secondary) 72%)}
+.dss-custom-pulse{animation:dss-card-breathe 4.8s ease-in-out infinite}
+.dss-custom-sheen .dss-card-glow{animation:dss-card-sheen 4.5s ease-in-out infinite}
+.dss-custom-aurora .dss-card-glow{background:linear-gradient(115deg,transparent 20%,color-mix(in srgb,var(--club-accent) 22%,transparent) 40%,rgba(86,190,255,.14) 52%,transparent 72%);animation:dss-card-sheen 6s ease-in-out infinite}
+.exclusive-mini-preview{display:flex;flex-direction:column;gap:8px;margin:12px 0;padding:15px;border:1px solid var(--club-accent);border-radius:16px;background:radial-gradient(circle at 90% 0%,color-mix(in srgb,var(--club-accent) 25%,transparent),transparent 55%),linear-gradient(135deg,var(--club-primary),var(--club-secondary));box-shadow:0 0 17px color-mix(in srgb,var(--club-accent) 35%,transparent);color:#fff}
+.exclusive-mini-preview b{font-size:8px;letter-spacing:3px;color:var(--club-accent)}
+.exclusive-mini-preview strong{font-size:20px;font-style:italic}
+.exclusive-mini-preview span{font-size:10px;color:#ddd2eb}
