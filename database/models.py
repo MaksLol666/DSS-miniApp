@@ -285,6 +285,7 @@ class ClubMonthlyCoupon(Base):
     level_code: Mapped[str] = mapped_column(String(16))
     discount: Mapped[int] = mapped_column(Integer)
     min_order: Mapped[int] = mapped_column(Integer)
+    notified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
