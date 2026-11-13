@@ -309,3 +309,7 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 .club-monthly-code b{font-family:system-ui,sans-serif;font-size:9px;letter-spacing:1px;color:var(--club-user-accent,var(--purple))}
 .club-monthly-promo{border-color:color-mix(in srgb,var(--purple) 55%,var(--line));box-shadow:0 0 18px color-mix(in srgb,var(--purple) 10%,transparent)}
 .club-level-monthly{margin-top:9px;padding-top:8px;border-top:1px solid #ffffff12;color:var(--purple);font-size:11px;font-weight:700}
+
+
+.dss-membership-card{color:var(--club-text,#f8f5ff)}
+.dss-card-ornament{stroke:var(--club-ornament,currentColor)}
