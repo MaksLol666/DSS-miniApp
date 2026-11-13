@@ -1452,6 +1452,20 @@ async def club_select_title(data: dict, user: dict = Depends(current_user)):
 @app.post("/api/club/cosmetic/equip")
 async def club_equip_cosmetic(data: dict, user: dict = Depends(current_user)):
     key = str(data.get("key", "")).strip()
+    if not key:
+        kind = str(data.get("kind", "card"))
+        if kind not in ("card", "badge", "frame", "effect", "title"):
+            raise HTTPException(400, "Неизвестный тип косметики.")
+        async with SessionLocal() as session:
+            await session.execute(delete(ClubCosmeticLoadout).where(
+                ClubCosmeticLoadout.user_id == user["id"], ClubCosmeticLoadout.kind == kind
+            ))
+            if kind == "title":
+                selection = await session.get(ClubTitleSelection, user["id"])
+                if selection:
+                    await session.delete(selection)
+            await session.commit()
+        return {"ok": True, "unequipped": True, "kind": kind}
     async with SessionLocal() as session:
         cosmetic = await session.get(ClubCosmetic, key)
         if not cosmetic or not cosmetic.active:
@@ -1809,8 +1823,10 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
             raise HTTPException(400, "Некорректное условие, анимация или шрифт карточки.")
         def valid_hex(value, fallback):
             value = str(value or fallback).strip()
+            if value.lower() == "rainbow":
+                return "rainbow"
             if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
-                raise HTTPException(400, "Цвет карточки должен быть в формате #RRGGBB.")
+                raise HTTPException(400, "Цвет карточки должен быть #RRGGBB или rainbow.")
             return value
         session.add(ClubCosmetic(key=key, kind=kind, title=title[:96],
             description=str(data.get("description", ""))[:256], icon=str(data.get("icon", "✦"))[:16],
@@ -1849,9 +1865,9 @@ async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict =
         for field in ("card_primary", "card_secondary", "card_accent", "card_ornament", "card_text"):
             if field in data:
                 value = str(data[field]).strip()
-                if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
-                    raise HTTPException(400, "Цвет карточки должен быть в формате #RRGGBB.")
-                setattr(item, field, value)
+                if value.lower() != "rainbow" and not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                    raise HTTPException(400, "Цвет карточки должен быть #RRGGBB или rainbow.")
+                setattr(item, field, value.lower() if value.lower() == "rainbow" else value)
         if "card_animation" in data:
             if data["card_animation"] not in ("none", "pulse", "sheen", "aurora", "scan", "shimmer", "orbit", "ember"):
                 raise HTTPException(400, "Неизвестная анимация карточки.")
