@@ -1052,7 +1052,7 @@ async def _club_current_level_code(session, user_id: int) -> str:
     return current
 
 
-async def _send_monthly_coupon_notice(user_id: int, code: str, discount: int, min_order: int, expires_at: datetime) -> bool:
+async async def _send_monthly_coupon_notice(user_id: int, code: str, discount: int, min_order: int, expires_at: datetime) -> bool:
     expires_text = _promo_datetime_to_local(expires_at) or "конца месяца"
     message = (f"💜 Твоя ежемесячная привилегия DSS CLUB\n\n"
         f"Промокод: {code}\nСкидка: {discount} ₽\n"
@@ -1818,7 +1818,7 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
             card_accent=valid_hex(data.get("card_accent"), "#c49aff"),
             card_animation=animation, requirement_type=requirement_type,
             requirement_value=max(0, min(100000000, int(data.get("requirement_value", 0)))),
-            card_font=card_font, max_supply=max(0, min(100000, int(data.get("max_supply", 0)))), issued_count=0)
+            card_font=card_font, max_supply=max(0, min(100000, int(data.get("max_supply", 0)))), issued_count=0))
         await session.commit()
     return {"ok": True, "key": key}
 
