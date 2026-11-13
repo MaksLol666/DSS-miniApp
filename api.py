@@ -1081,34 +1081,18 @@ async def _ensure_monthly_club_coupon(session, user_id: int, level_code: str | N
     ))).scalar_one_or_none()
     if existing:
         promo = await session.get(Promocode, existing.code)
-        if promo:
-            is_used = bool(promo.used or int(promo.used_count or 0) >= int(promo.max_uses or 1))
-            if not is_used and not bool(existing.notified):
-                sent = await _send_monthly_coupon_notice(user_id, promo.code, int(existing.discount), int(existing.min_order), promo.expires_at)
-                if sent:
-                    existing.notified = True
-                    await session.commit()
-            return {"code": promo.code, "discount": int(existing.discount), "min_order": int(existing.min_order),
-                    "expires_at": _promo_datetime_to_local(promo.expires_at), "level": existing.level_code,
-                    "used": is_used, "new": False}
-        local_start = moscow_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        if moscow_now.month == 12:
-            local_next = local_start.replace(year=moscow_now.year + 1, month=1)
-        else:
-            local_next = local_start.replace(month=moscow_now.month + 1)
-        starts_at = local_start - timedelta(hours=3)
-        expires_at = local_next - timedelta(hours=3, seconds=1)
-        recreated = Promocode(code=existing.code, owner_id=user_id, kind="fixed", amount=int(existing.discount),
-            used=False, created_by="club", max_uses=1, used_count=0, target_type="all",
-            min_order=int(existing.min_order), starts_at=starts_at, expires_at=expires_at)
-        session.add(recreated)
-        await session.commit()
-        sent = await _send_monthly_coupon_notice(user_id, existing.code, int(existing.discount), int(existing.min_order), expires_at)
-        if sent:
-            existing.notified = True
-            await session.commit()
-        return {"code": existing.code, "discount": int(existing.discount), "min_order": int(existing.min_order),
-                "expires_at": _promo_datetime_to_local(expires_at), "level": existing.level_code, "new": False}
+        if not promo:
+            return {"code": existing.code, "discount": int(existing.discount), "min_order": int(existing.min_order),
+                    "expires_at": None, "level": existing.level_code, "used": True, "new": False}
+        is_used = bool(promo.used or int(promo.used_count or 0) >= int(promo.max_uses or 1))
+        if not is_used and not bool(existing.notified):
+            sent = await _send_monthly_coupon_notice(user_id, promo.code, int(existing.discount), int(existing.min_order), promo.expires_at)
+            if sent:
+                existing.notified = True
+                await session.commit()
+        return {"code": promo.code, "discount": int(existing.discount), "min_order": int(existing.min_order),
+                "expires_at": _promo_datetime_to_local(promo.expires_at), "level": existing.level_code,
+                "used": is_used, "new": False}
     old_codes = list((await session.execute(select(Promocode.code).where(
         Promocode.owner_id == user_id, Promocode.created_by == "club"
     ))).scalars().all())
