@@ -232,6 +232,7 @@ async def _migrate_legacy_columns() -> None:
         ("club_cosmetics", "card_font", "TEXT DEFAULT 'orbitron'"),
         ("club_cosmetics", "max_supply", "INTEGER DEFAULT 0"),
         ("club_cosmetics", "issued_count", "INTEGER DEFAULT 0"),
+        ("club_monthly_coupons", "notified", "INTEGER DEFAULT 0"),
     ]
     async with engine.begin() as connection:
         for table, column, sql_type in columns:
@@ -240,6 +241,31 @@ async def _migrate_legacy_columns() -> None:
             except Exception:
                 # SQLite raises when this column already exists; that is expected.
                 pass
+
+
+async def _monthly_coupon_scheduler():
+    while True:
+        try:
+            moscow_now = datetime.utcnow() + timedelta(hours=3)
+            if moscow_now.day == 1:
+                async with SessionLocal() as session:
+                    user_ids = list((await session.execute(
+                        select(User.id).where(User.is_banned.is_(False))
+                    )).scalars().all())
+                    for user_id in user_ids:
+                        try:
+                            await _ensure_monthly_club_coupon(session, int(user_id))
+                        except Exception:
+                            await session.rollback()
+                            log.exception("Ошибка выпуска месячной клубной скидки user_id=%s", user_id)
+                await asyncio.sleep(300)
+            else:
+                await asyncio.sleep(1800)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Ошибка планировщика ежемесячных DSS CLUB промокодов")
+            await asyncio.sleep(300)
 
 
 @asynccontextmanager
@@ -253,8 +279,14 @@ async def lifespan(app: FastAPI):
     log.info("Frontend path: %s; index.html exists: %s", STATIC_DIR, (STATIC_DIR / "index.html").is_file())
     log.info("DDoS-Guard CAPTCHA enabled: %s", bool(SITE_KEY and PRIVATE_KEY))
     task = asyncio.create_task(bot.start_bot()) if BOT_TOKEN else None
+    coupon_task = asyncio.create_task(_monthly_coupon_scheduler())
     log.info("DSS Mini App API startup complete")
     yield
+    coupon_task.cancel()
+    try:
+        await coupon_task
+    except asyncio.CancelledError:
+        pass
     if task:
         task.cancel()
         try:
@@ -1020,6 +1052,20 @@ async def _club_current_level_code(session, user_id: int) -> str:
     return current
 
 
+async def _send_monthly_coupon_notice(user_id: int, code: str, discount: int, min_order: int, expires_at: datetime) -> bool:
+    expires_text = _promo_datetime_to_local(expires_at) or "конца месяца"
+    message = (f"💜 Твоя ежемесячная привилегия DSS CLUB\n\n"
+        f"Промокод: {code}\nСкидка: {discount} ₽\n"
+        f"Минимальная корзина: {min_order} ₽\n"
+        f"Действует до {expires_text}. Один заказ, без объединения с другими промокодами. "
+        f"Категория «Наборы» не участвует.")
+    try:
+        return bool(await bot.send_message_safe(user_id, message))
+    except Exception:
+        log.exception("Не удалось отправить клубный промокод user_id=%s", user_id)
+        return False
+
+
 async def _ensure_monthly_club_coupon(session, user_id: int, level_code: str | None = None) -> dict:
     now_utc = datetime.utcnow()
     moscow_now = now_utc + timedelta(hours=3)
@@ -1033,9 +1079,15 @@ async def _ensure_monthly_club_coupon(session, user_id: int, level_code: str | N
     if existing:
         promo = await session.get(Promocode, existing.code)
         if promo:
+            is_used = bool(promo.used or int(promo.used_count or 0) >= int(promo.max_uses or 1))
+            if not is_used and not bool(existing.notified):
+                sent = await _send_monthly_coupon_notice(user_id, promo.code, int(existing.discount), int(existing.min_order), promo.expires_at)
+                if sent:
+                    existing.notified = True
+                    await session.commit()
             return {"code": promo.code, "discount": int(existing.discount), "min_order": int(existing.min_order),
                     "expires_at": _promo_datetime_to_local(promo.expires_at), "level": existing.level_code,
-                    "used": bool(promo.used or int(promo.used_count or 0) >= int(promo.max_uses or 1)), "new": False}
+                    "used": is_used, "new": False}
         local_start = moscow_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         if moscow_now.month == 12:
             local_next = local_start.replace(year=moscow_now.year + 1, month=1)
@@ -1048,6 +1100,10 @@ async def _ensure_monthly_club_coupon(session, user_id: int, level_code: str | N
             min_order=int(existing.min_order), starts_at=starts_at, expires_at=expires_at)
         session.add(recreated)
         await session.commit()
+        sent = await _send_monthly_coupon_notice(user_id, existing.code, int(existing.discount), int(existing.min_order), expires_at)
+        if sent:
+            existing.notified = True
+            await session.commit()
         return {"code": existing.code, "discount": int(existing.discount), "min_order": int(existing.min_order),
                 "expires_at": _promo_datetime_to_local(expires_at), "level": existing.level_code, "new": False}
     old_codes = list((await session.execute(select(Promocode.code).where(
@@ -1070,18 +1126,14 @@ async def _ensure_monthly_club_coupon(session, user_id: int, level_code: str | N
         created_by="club", max_uses=1, used_count=0, target_type="all", min_order=min_order,
         starts_at=starts_at, expires_at=expires_at)
     session.add(promo)
-    session.add(ClubMonthlyCoupon(user_id=user_id, month_key=month_key, code=code,
-        level_code=level_code, discount=discount, min_order=min_order))
+    coupon_record = ClubMonthlyCoupon(user_id=user_id, month_key=month_key, code=code,
+        level_code=level_code, discount=discount, min_order=min_order, notified=False)
+    session.add(coupon_record)
     await session.commit()
-    try:
-        await bot.send_message_safe(user_id,
-            f"💜 Твоя ежемесячная привилегия DSS CLUB\n\n"
-            f"Промокод: {code}\nСкидка: {discount} ₽\n"
-            f"Минимальная корзина: {min_order} ₽\n"
-            f"Действует до конца месяца. Один заказ, без объединения с другими промокодами. "
-            f"Категория «Наборы» не участвует.")
-    except Exception:
-        log.exception("Не удалось отправить клубный промокод user_id=%s", user_id)
+    sent = await _send_monthly_coupon_notice(user_id, code, discount, min_order, expires_at)
+    if sent:
+        coupon_record.notified = True
+        await session.commit()
     return {"code": code, "discount": discount, "min_order": min_order,
             "expires_at": _promo_datetime_to_local(expires_at), "level": level_code, "new": True}
 
