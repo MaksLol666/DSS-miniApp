@@ -1806,6 +1806,10 @@ async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict =
             item.card_font = data["card_font"]
         if "max_supply" in data:
             item.max_supply = max(0, min(100000, int(data["max_supply"])))
+            issued = int((await session.execute(select(func.count(ClubUserCosmetic.id)).where(
+                ClubUserCosmetic.cosmetic_key == cosmetic_key
+            ))).scalar() or 0)
+            item.issued_count = max(int(item.issued_count or 0), issued)
         if "requirement_type" in data:
             if data["requirement_type"] not in ("none", "orders", "lifetime_dcp", "referrals"):
                 raise HTTPException(400, "Неизвестное условие получения карточки.")
@@ -1873,6 +1877,12 @@ async def club_profile(user: dict = Depends(current_user)):
         if orders >= level["orders"] and lifetime >= level["points"] and referrals >= level.get("referrals", 0):
             level_index = index
     current = levels[level_index]
+    monthly_discount, monthly_min_order = CLUB_MONTHLY_DISCOUNTS.get(str(current.get("code", "MEMBER")).upper(), CLUB_MONTHLY_DISCOUNTS["MEMBER"])
+    enriched_levels = []
+    for level_index_item, level_item in enumerate(levels):
+        tier_discount, tier_minimum = CLUB_MONTHLY_DISCOUNTS.get(str(level_item.get("code", "MEMBER")).upper(), CLUB_MONTHLY_DISCOUNTS["MEMBER"])
+        enriched_levels.append({**level_item, "unlocked": level_index >= level_index_item,
+            "monthly_discount": tier_discount, "monthly_min_order": tier_minimum})
     nxt = levels[level_index + 1] if level_index + 1 < len(levels) else None
     if nxt:
         ratios = [orders / max(nxt["orders"], 1), lifetime / max(nxt["points"], 1)]
@@ -1885,11 +1895,12 @@ async def club_profile(user: dict = Depends(current_user)):
     async with SessionLocal() as session:
         monthly_coupon = await _ensure_monthly_club_coupon(session, uid, current["code"])
     return {
-        "monthly_coupon": monthly_coupon,
+        "monthly_coupon": monthly_coupon, "monthly_discount": monthly_discount, "monthly_min_order": monthly_min_order,
         "balance": balance, "lifetime_earned": lifetime, "completed_orders": orders,
         "completed_referrals": referrals,
-        "level": current["code"], "level_title": current["title"], "level_perks": current["perks"],
-        "levels": [{**level, "unlocked": level_index >= i} for i, level in enumerate(levels)],
+        "level": current["code"], "level_title": current["title"],
+        "level_perks": list(current["perks"]) + [f"Ежемесячная скидка {monthly_discount} ₽ от {monthly_min_order} ₽"],
+        "levels": enriched_levels,
         "next_level": nxt["code"] if nxt else None,
         "next_level_orders": nxt["orders"] if nxt else None,
         "next_level_points": nxt["points"] if nxt else None,
