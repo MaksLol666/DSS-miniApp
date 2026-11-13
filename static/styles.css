@@ -283,3 +283,19 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 .exclusive-mini-preview b{font-size:8px;letter-spacing:3px;color:var(--club-accent)}
 .exclusive-mini-preview strong{font-size:20px;font-style:italic}
 .exclusive-mini-preview span{font-size:10px;color:#ddd2eb}
+
+
+@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700;800&family=Montserrat:wght@400;500;600;700;800&family=Orbitron:wght@400;500;600;700;800&family=Rajdhani:wght@400;500;600;700&display=swap');
+/* Dynamic DSS CLUB theme and premium card variants */
+.dss-membership-card{font-family:var(--club-font,inherit)}
+.dss-card-custom-crest{width:76px;height:76px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--club-accent) 85%,white);border-radius:24px;background:radial-gradient(circle,color-mix(in srgb,var(--club-accent) 25%,transparent),transparent 70%);color:#fff;font-size:42px;line-height:1;text-shadow:0 0 8px var(--club-accent),0 0 22px var(--club-accent);box-shadow:0 0 20px var(--club-glow),inset 0 0 18px var(--club-glow);transform:rotate(4deg)}
+.dss-custom-scan .dss-card-glow:after{content:"";position:absolute;inset:-30% -60%;background:linear-gradient(105deg,transparent 42%,color-mix(in srgb,var(--club-accent) 30%,transparent) 50%,transparent 58%);animation:dss-card-scan 5s ease-in-out infinite}
+.dss-custom-shimmer .dss-card-glow:after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 18% 25%,#fff9 0 1px,transparent 2px),radial-gradient(circle at 75% 65%,var(--club-accent) 0 1px,transparent 3px),radial-gradient(circle at 50% 82%,#fff8 0 1px,transparent 2px);background-size:130px 100px;animation:dss-card-sparkle 3.8s ease-in-out infinite}
+.dss-custom-orbit .dss-card-orbit{border-color:var(--club-accent);box-shadow:0 0 14px var(--club-glow);animation:dss-card-orbit 12s linear infinite}
+.dss-custom-ember .dss-card-glow:after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 20% 90%,var(--club-accent) 0 1px,transparent 3px),radial-gradient(circle at 80% 75%,#ffb45b 0 1px,transparent 3px),radial-gradient(circle at 55% 100%,#fff 0 1px,transparent 2px);animation:dss-card-embers 4s ease-in-out infinite}
+.dss-custom-aurora .dss-card-glow{background:linear-gradient(120deg,transparent 15%,color-mix(in srgb,var(--club-accent) 25%,transparent),rgba(70,170,255,.12),transparent 82%);background-size:220% 100%;animation:dss-card-aurora 7s ease-in-out infinite}
+@keyframes dss-card-scan{0%,100%{transform:translateX(-35%);opacity:0}35%,65%{opacity:1}80%{transform:translateX(35%);opacity:0}}
+@keyframes dss-card-sparkle{0%,100%{opacity:.15;transform:translateY(4px)}50%{opacity:.85;transform:translateY(-5px)}}
+@keyframes dss-card-orbit{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@keyframes dss-card-embers{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:.85;transform:translateY(-8px)}}
+@keyframes dss-card-aurora{0%,100%{background-position:0% 50%;filter:hue-rotate(0)}50%{background-position:100% 50%;filter:hue-rotate(22deg)}}
