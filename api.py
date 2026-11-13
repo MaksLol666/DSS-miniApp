@@ -1032,9 +1032,10 @@ async def _ensure_monthly_club_coupon(session, user_id: int, level_code: str | N
     ))).scalar_one_or_none()
     if existing:
         promo = await session.get(Promocode, existing.code)
-        if promo and not promo.used and int(promo.used_count or 0) < int(promo.max_uses or 1) and _promo_is_active(promo, now_utc):
+        if promo:
             return {"code": promo.code, "discount": int(existing.discount), "min_order": int(existing.min_order),
-                    "expires_at": _promo_datetime_to_local(promo.expires_at), "level": existing.level_code, "new": False}
+                    "expires_at": _promo_datetime_to_local(promo.expires_at), "level": existing.level_code,
+                    "used": bool(promo.used or int(promo.used_count or 0) >= int(promo.max_uses or 1)), "new": False}
         local_start = moscow_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         if moscow_now.month == 12:
             local_next = local_start.replace(year=moscow_now.year + 1, month=1)
