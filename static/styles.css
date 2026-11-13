@@ -313,3 +313,13 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 
 .dss-membership-card{color:var(--club-text,#f8f5ff)}
 .dss-card-ornament{stroke:var(--club-ornament,currentColor)}
+
+
+/* DSS CLUB rainbow card finishes */
+.dss-membership-card.dss-rainbow-primary[style*="--club-primary"]{background:linear-gradient(120deg,#ff1744,#ff9100,#ffee00,#00e676,#00b0ff,#651fff,#f500d4,#ff1744);background-size:260% 260%;animation:dss-rainbow-flow 10s linear infinite,dss-card-breathe 4.8s ease-in-out infinite}
+.dss-membership-card.dss-rainbow-secondary{background-image:linear-gradient(120deg,#ff1744,#ff9100,#ffee00,#00e676,#00b0ff,#651fff,#f500d4,#ff1744);background-size:260% 260%;animation:dss-rainbow-flow 10s linear infinite}
+.dss-membership-card.dss-rainbow-accent{border:2px solid transparent;background-clip:padding-box;position:relative}
+.dss-membership-card.dss-rainbow-accent:before{content:"";position:absolute;z-index:-1;inset:-3px;border-radius:27px;padding:3px;background:conic-gradient(#ff1744,#ff9100,#ffee00,#00e676,#00b0ff,#651fff,#f500d4,#ff1744);animation:dss-rainbow-spin 5s linear infinite}
+@keyframes dss-rainbow-flow{0%{background-position:0% 50%}100%{background-position:100% 50%}}
+@keyframes dss-rainbow-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.dss-membership-card.dss-rainbow-primary,.dss-membership-card.dss-rainbow-secondary,.dss-membership-card.dss-rainbow-accent:before{animation:none!important}}
