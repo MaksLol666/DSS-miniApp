@@ -267,6 +267,8 @@ class ClubCosmetic(Base):
     card_primary: Mapped[str] = mapped_column(String(7), default="#26133b")
     card_secondary: Mapped[str] = mapped_column(String(7), default="#0b0812")
     card_accent: Mapped[str] = mapped_column(String(7), default="#c49aff")
+    card_ornament: Mapped[str] = mapped_column(String(7), default="#ffffff")
+    card_text: Mapped[str] = mapped_column(String(7), default="#f8f5ff")
     card_animation: Mapped[str] = mapped_column(String(16), default="pulse")
     requirement_type: Mapped[str] = mapped_column(String(24), default="none")
     requirement_value: Mapped[int] = mapped_column(Integer, default=0)
