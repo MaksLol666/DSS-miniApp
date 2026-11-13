@@ -250,11 +250,12 @@ async def _monthly_coupon_scheduler():
             if moscow_now.day == 1:
                 async with SessionLocal() as session:
                     user_ids = list((await session.execute(
-                        select(User.id).where(User.is_banned.is_(False))
+                        select(User.id).where(User.is_banned.is_(False), User.is_unreachable.is_(False))
                     )).scalars().all())
                     for user_id in user_ids:
                         try:
                             await _ensure_monthly_club_coupon(session, int(user_id))
+                            await asyncio.sleep(0.08)
                         except Exception:
                             await session.rollback()
                             log.exception("Ошибка выпуска месячной клубной скидки user_id=%s", user_id)
@@ -1129,7 +1130,20 @@ async def _ensure_monthly_club_coupon(session, user_id: int, level_code: str | N
     coupon_record = ClubMonthlyCoupon(user_id=user_id, month_key=month_key, code=code,
         level_code=level_code, discount=discount, min_order=min_order, notified=False)
     session.add(coupon_record)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raced = (await session.execute(select(ClubMonthlyCoupon).where(
+            ClubMonthlyCoupon.user_id == user_id, ClubMonthlyCoupon.month_key == month_key
+        ))).scalar_one_or_none()
+        if raced:
+            raced_promo = await session.get(Promocode, raced.code)
+            if raced_promo:
+                return {"code": raced.code, "discount": int(raced.discount), "min_order": int(raced.min_order),
+                        "expires_at": _promo_datetime_to_local(raced_promo.expires_at), "level": raced.level_code,
+                        "used": bool(raced_promo.used or int(raced_promo.used_count or 0) >= int(raced_promo.max_uses or 1)), "new": False}
+        raise
     sent = await _send_monthly_coupon_notice(user_id, code, discount, min_order, expires_at)
     if sent:
         coupon_record.notified = True
