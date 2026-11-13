@@ -226,6 +226,8 @@ async def _migrate_legacy_columns() -> None:
         ("club_cosmetics", "card_primary", "TEXT DEFAULT '#26133b'"),
         ("club_cosmetics", "card_secondary", "TEXT DEFAULT '#0b0812'"),
         ("club_cosmetics", "card_accent", "TEXT DEFAULT '#c49aff'"),
+        ("club_cosmetics", "card_ornament", "TEXT DEFAULT '#ffffff'"),
+        ("club_cosmetics", "card_text", "TEXT DEFAULT '#f8f5ff'"),
         ("club_cosmetics", "card_animation", "TEXT DEFAULT 'pulse'"),
         ("club_cosmetics", "requirement_type", "TEXT DEFAULT 'none'"),
         ("club_cosmetics", "requirement_value", "INTEGER DEFAULT 0"),
@@ -1429,6 +1431,7 @@ async def club_activities(user: dict = Depends(current_user)):
                 "cosmetics": [{"key": c.key, "kind": c.kind, "title": c.title, "description": c.description,
                     "icon": c.icon, "rarity": c.rarity, "equipped": equipped_by_kind.get(c.kind) == c.key,
                     "card_primary": c.card_primary, "card_secondary": c.card_secondary, "card_accent": c.card_accent,
+                    "card_ornament": c.card_ornament, "card_text": c.card_text,
                     "card_animation": c.card_animation, "requirement_type": c.requirement_type,
                     "requirement_value": int(c.requirement_value or 0), "card_font": c.card_font,
                     "max_supply": int(c.max_supply or 0), "issued_count": int(c.issued_count or 0)}
@@ -1797,6 +1800,7 @@ async def admin_club_cosmetics(user: dict = Depends(admin_user)):
         return [{"key": x.key, "kind": x.kind, "title": x.title, "description": x.description,
                  "icon": x.icon, "rarity": x.rarity, "active": bool(x.active),
                  "card_primary": x.card_primary, "card_secondary": x.card_secondary, "card_accent": x.card_accent,
+                 "card_ornament": x.card_ornament, "card_text": x.card_text,
                  "card_animation": x.card_animation, "requirement_type": x.requirement_type,
                  "requirement_value": int(x.requirement_value or 0), "card_font": x.card_font,
                  "max_supply": int(x.max_supply or 0), "issued_count": int(x.issued_count or 0)} for x in rows]
@@ -1830,6 +1834,8 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
             card_primary=valid_hex(data.get("card_primary"), "#26133b"),
             card_secondary=valid_hex(data.get("card_secondary"), "#0b0812"),
             card_accent=valid_hex(data.get("card_accent"), "#c49aff"),
+            card_ornament=valid_hex(data.get("card_ornament"), "#ffffff"),
+            card_text=valid_hex(data.get("card_text"), "#f8f5ff"),
             card_animation=animation, requirement_type=requirement_type,
             requirement_value=max(0, min(100000000, int(data.get("requirement_value", 0)))),
             card_font=card_font, max_supply=max(0, min(100000, int(data.get("max_supply", 0)))), issued_count=0))
@@ -1856,7 +1862,7 @@ async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict =
             item.rarity = str(data["rarity"])[:16]
         if "active" in data:
             item.active = bool(data["active"])
-        for field in ("card_primary", "card_secondary", "card_accent"):
+        for field in ("card_primary", "card_secondary", "card_accent", "card_ornament", "card_text"):
             if field in data:
                 value = str(data[field]).strip()
                 if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
