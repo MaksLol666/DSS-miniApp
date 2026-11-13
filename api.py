@@ -17,7 +17,7 @@ from urllib.parse import parse_qsl
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 import bot
@@ -26,7 +26,7 @@ from config import (
     REFERRAL_BONUS_PERCENT, REFERRAL_MILESTONE, REFERRAL_MILESTONE_DISCOUNT,
 )
 from database.db import SessionLocal, engine, init_db
-from database.models import CartClubRedemption, CartItem, CartPromo, Category, ClubAccount, ClubAchievementUnlock, ClubTaskConfig, ClubTaskProgress, ClubTitleSelection, ClubTransaction, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User, ClubSeason, ClubSeasonPoint, ClubSeasonReward, ClubSetting, ClubCosmetic, ClubUserCosmetic, ClubCosmeticLoadout
+from database.models import CartClubRedemption, CartItem, CartPromo, Category, ClubAccount, ClubAchievementUnlock, ClubTaskConfig, ClubTaskProgress, ClubTitleSelection, ClubTransaction, Favorite, Order, OrderItem, OrderStatusHistory, Product, Promocode, Review, User, ClubSeason, ClubSeasonPoint, ClubSeasonReward, ClubSetting, ClubCosmetic, ClubUserCosmetic, ClubCosmeticLoadout, ClubMonthlyCoupon
 from image_utils import optimize_product_image
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -229,6 +229,9 @@ async def _migrate_legacy_columns() -> None:
         ("club_cosmetics", "card_animation", "TEXT DEFAULT 'pulse'"),
         ("club_cosmetics", "requirement_type", "TEXT DEFAULT 'none'"),
         ("club_cosmetics", "requirement_value", "INTEGER DEFAULT 0"),
+        ("club_cosmetics", "card_font", "TEXT DEFAULT 'orbitron'"),
+        ("club_cosmetics", "max_supply", "INTEGER DEFAULT 0"),
+        ("club_cosmetics", "issued_count", "INTEGER DEFAULT 0"),
     ]
     async with engine.begin() as connection:
         for table, column, sql_type in columns:
@@ -367,6 +370,8 @@ async def _promo_codes(session, uid: int) -> list[str]:
 
 
 def _promo_matches_item(promo: Promocode, item: dict) -> bool:
+    if promo.created_by == "club" and "набор" in str(item.get("category_name", "")).casefold():
+        return False
     if promo.target_type == "product":
         return int(item.get("product_id", 0)) == int(promo.target_id or 0)
     if promo.target_type == "category":
@@ -498,9 +503,11 @@ async def _cart(uid: int) -> dict:
         club_config = await _club_config(session)
         min_product_price = int(club_config.get("economy", {}).get("min_product_price", CLUB_MIN_PRODUCT_PRICE))
         rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == uid).order_by(CartItem.id))).all()
+        category_names = {c.id: c.name for c in (await session.execute(select(Category))).scalars().all()}
         items = [{
-            "product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor,
-            "price": float(p.price), "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0),
+            "product_id": p.id, "category_id": p.category_id, "category_name": category_names.get(p.category_id, ""),
+            "brand": p.brand, "flavor": p.flavor, "price": float(p.price),
+            "quantity": int(item.quantity or 1), "stock_qty": int(p.stock_qty or 0),
             "club_eligible": float(p.price) + 0.001 >= min_product_price,
         } for item, p in rows]
         codes = await _promo_codes(session, uid)
@@ -706,7 +713,9 @@ async def apply_promo(data: dict, user: dict = Depends(current_user)):
         if not promo or promo.used or promo.used_count >= promo.max_uses:
             raise HTTPException(404, "Промокод не найден или исчерпан.")
         cart_rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == user["id"]))).all()
-        cart_items = [{"product_id": p.id, "category_id": p.category_id, "price": float(p.price), "quantity": int(item.quantity or 1)} for item, p in cart_rows]
+        category_names = {c.id: c.name for c in (await session.execute(select(Category))).scalars().all()}
+        cart_items = [{"product_id": p.id, "category_id": p.category_id, "category_name": category_names.get(p.category_id, ""),
+            "price": float(p.price), "quantity": int(item.quantity or 1)} for item, p in cart_rows]
         if not cart_items:
             raise HTTPException(400, "Сначала добавь товары в корзину.")
         _validate_promo_for_items(promo, cart_items)
@@ -718,6 +727,11 @@ async def apply_promo(data: dict, user: dict = Depends(current_user)):
         codes = await _promo_codes(session, user["id"])
         if code in codes:
             raise HTTPException(409, "Этот промокод уже применён.")
+        applied_promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
+        if promo.created_by == "club" and codes:
+            raise HTTPException(409, "Клубный промокод нельзя объединять с другими промокодами.")
+        if any(p.created_by == "club" for p in applied_promos):
+            raise HTTPException(409, "К клубному промокоду нельзя добавлять другие промокоды.")
         if len(codes) >= MAX_PROMOS_PER_ORDER:
             raise HTTPException(409, "Можно применить не больше двух промокодов.")
         session.add(CartPromo(user_id=user["id"], code=code))
@@ -762,11 +776,16 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
             requested = int(cart_item.quantity or 1)
             if not p.in_stock or int(p.stock_qty or 0) < requested:
                 raise HTTPException(409, f"Для товара {p.brand} — {p.flavor} доступно {int(p.stock_qty or 0)} шт., в корзине {requested}.")
-        items = [{"product_id": p.id, "category_id": p.category_id, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "quantity": int(cart_item.quantity or 1)} for cart_item, p in rows]
+        category_names = {c.id: c.name for c in (await session.execute(select(Category))).scalars().all()}
+        items = [{"product_id": p.id, "category_id": p.category_id, "category_name": category_names.get(p.category_id, ""),
+            "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None,
+            "quantity": int(cart_item.quantity or 1)} for cart_item, p in rows]
         codes = await _promo_codes(session, user["id"])
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
         if len(codes) != len(promos) or any(p.used or p.used_count >= p.max_uses for p in promos):
             raise HTTPException(409, "Один из промокодов больше недоступен.")
+        if any(p.created_by == "club" for p in promos) and len(promos) != 1:
+            raise HTTPException(409, "Клубный промокод нельзя объединять с другими промокодами.")
         for promo in promos:
             if promo.owner_id not in (0, user["id"], ADMIN_ID):
                 raise HTTPException(403, "Один из промокодов выдан другому пользователю.")
@@ -1836,7 +1855,9 @@ async def profile(user: dict = Depends(current_user)):
 async def my_promos(user: dict = Depends(current_user)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(Promocode).where(Promocode.owner_id == user["id"], Promocode.used.is_(False), Promocode.used_count < Promocode.max_uses).order_by(Promocode.code))).scalars().all()
-        return [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "used_count": p.used_count, "max_uses": p.max_uses} for p in rows]
+        return [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "used_count": p.used_count, "max_uses": p.max_uses,
+                 "is_club": p.created_by == "club", "min_order": float(p.min_order or 0),
+                 "expires_at": _promo_datetime_to_local(p.expires_at)} for p in rows]
 
 
 @app.get("/api/top")
