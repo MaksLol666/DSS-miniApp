@@ -1000,6 +1000,77 @@ async def _ensure_club_tasks(session):
     await session.flush()
 
 
+CLUB_MONTHLY_DISCOUNTS = {
+    "MEMBER": (50, 300), "ACTIVE": (100, 400), "PREMIUM": (150, 450),
+    "VIP": (250, 500), "LEGEND": (300, 800), "AMBASSADOR": (400, 1500),
+}
+
+
+async def _club_current_level_code(session, user_id: int) -> str:
+    config = await _club_config(session)
+    metrics = await _club_metrics(session, user_id)
+    account = await session.get(ClubAccount, user_id)
+    lifetime = int(account.lifetime_earned or 0) if account else 0
+    current = "MEMBER"
+    for level in config.get("levels", CLUB_LEVELS):
+        if (metrics["orders"] >= int(level.get("orders", 0))
+                and lifetime >= int(level.get("points", 0))
+                and metrics["referrals"] >= int(level.get("referrals", 0))):
+            current = str(level.get("code", "MEMBER")).upper()
+    return current
+
+
+async def _ensure_monthly_club_coupon(session, user_id: int, level_code: str | None = None) -> dict:
+    now_utc = datetime.utcnow()
+    moscow_now = now_utc + timedelta(hours=3)
+    month_key = f"{moscow_now.year:04d}-{moscow_now.month:02d}"
+    if level_code is None:
+        level_code = await _club_current_level_code(session, user_id)
+    discount, min_order = CLUB_MONTHLY_DISCOUNTS.get(level_code, CLUB_MONTHLY_DISCOUNTS["MEMBER"])
+    existing = (await session.execute(select(ClubMonthlyCoupon).where(
+        ClubMonthlyCoupon.user_id == user_id, ClubMonthlyCoupon.month_key == month_key
+    ))).scalar_one_or_none()
+    if existing:
+        promo = await session.get(Promocode, existing.code)
+        if promo and not promo.used and int(promo.used_count or 0) < int(promo.max_uses or 1) and _promo_is_active(promo, now_utc):
+            return {"code": promo.code, "discount": int(existing.discount), "min_order": int(existing.min_order),
+                    "expires_at": _promo_datetime_to_local(promo.expires_at), "level": existing.level_code, "new": False}
+    old_codes = list((await session.execute(select(Promocode.code).where(
+        Promocode.owner_id == user_id, Promocode.created_by == "club"
+    ))).scalars().all())
+    if old_codes:
+        await session.execute(delete(CartPromo).where(CartPromo.user_id == user_id, CartPromo.code.in_(old_codes)))
+        await session.execute(delete(Promocode).where(Promocode.code.in_(old_codes)))
+    local_start = moscow_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if moscow_now.month == 12:
+        local_next = local_start.replace(year=moscow_now.year + 1, month=1)
+    else:
+        local_next = local_start.replace(month=moscow_now.month + 1)
+    starts_at = local_start - timedelta(hours=3)
+    expires_at = local_next - timedelta(hours=3, seconds=1)
+    code = "DSS" + secrets.token_hex(6).upper()
+    while await session.get(Promocode, code):
+        code = "DSS" + secrets.token_hex(6).upper()
+    promo = Promocode(code=code, owner_id=user_id, kind="fixed", amount=discount, used=False,
+        created_by="club", max_uses=1, used_count=0, target_type="all", min_order=min_order,
+        starts_at=starts_at, expires_at=expires_at)
+    session.add(promo)
+    session.add(ClubMonthlyCoupon(user_id=user_id, month_key=month_key, code=code,
+        level_code=level_code, discount=discount, min_order=min_order))
+    await session.commit()
+    try:
+        await bot.send_message_safe(user_id,
+            f"💜 Твоя ежемесячная привилегия DSS CLUB\n\n"
+            f"Промокод: {code}\nСкидка: {discount} ₽\n"
+            f"Минимальная корзина: {min_order} ₽\n"
+            f"Действует до конца месяца. Один заказ, без объединения с другими промокодами. "
+            f"Категория «Наборы» не участвует.")
+    except Exception:
+        log.exception("Не удалось отправить клубный промокод user_id=%s", user_id)
+    return {"code": code, "discount": discount, "min_order": min_order,
+            "expires_at": _promo_datetime_to_local(expires_at), "level": level_code, "new": True}
+
+
 async def _club_metrics(session, user_id: int) -> dict:
     actual_orders = int((await session.execute(select(func.count(Order.id)).where(Order.user_id == user_id, Order.status == "completed"))).scalar() or 0)
     account = await session.get(ClubAccount, user_id)
@@ -1772,7 +1843,11 @@ async def club_profile(user: dict = Depends(current_user)):
         progress = round(min(ratios) * 100)
     else:
         progress = 100
+    monthly_coupon = None
+    async with SessionLocal() as session:
+        monthly_coupon = await _ensure_monthly_club_coupon(session, uid, current["code"])
     return {
+        "monthly_coupon": monthly_coupon,
         "balance": balance, "lifetime_earned": lifetime, "completed_orders": orders,
         "completed_referrals": referrals,
         "level": current["code"], "level_title": current["title"], "level_perks": current["perks"],
@@ -1854,6 +1929,8 @@ async def profile(user: dict = Depends(current_user)):
 @app.get("/api/promos")
 async def my_promos(user: dict = Depends(current_user)):
     async with SessionLocal() as session:
+        level_code = await _club_current_level_code(session, user["id"])
+        await _ensure_monthly_club_coupon(session, user["id"], level_code)
         rows = (await session.execute(select(Promocode).where(Promocode.owner_id == user["id"], Promocode.used.is_(False), Promocode.used_count < Promocode.max_uses).order_by(Promocode.code))).scalars().all()
         return [{"code": p.code, "kind": p.kind, "amount": float(p.amount), "used_count": p.used_count, "max_uses": p.max_uses,
                  "is_club": p.created_by == "club", "min_order": float(p.min_order or 0),
