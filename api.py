@@ -1790,7 +1790,7 @@ async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict =
                 raise HTTPException(400, "Неизвестный шрифт карточки.")
             item.card_font = data["card_font"]
         if "max_supply" in data:
-            item.max_supply = max(0, min(100000, int(data["max_supply"]))
+            item.max_supply = max(0, min(100000, int(data["max_supply"])))
         if "requirement_type" in data:
             if data["requirement_type"] not in ("none", "orders", "lifetime_dcp", "referrals"):
                 raise HTTPException(400, "Неизвестное условие получения карточки.")
