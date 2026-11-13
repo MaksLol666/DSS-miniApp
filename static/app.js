@@ -549,9 +549,11 @@ async function uploadProductImages(productId, files) {
 }
 
 async function loadBase() {
-  const result = await Promise.all([api('/api/categories'), api('/api/products'), api('/api/cart'), api('/api/profile'), api('/api/club/activities'), api('/api/club')]);
+  // Issue/expire the monthly club coupon before loading the cart so stale codes are removed first.
+  state.club = await api('/api/club');
+  const result = await Promise.all([api('/api/categories'), api('/api/products'), api('/api/cart'), api('/api/profile'), api('/api/club/activities')]);
   state.categories = result[0]; state.products = result[1]; state.cart = result[2]; state.profile = result[3];
-  state.clubActivities = result[4]; state.club = result[5];
+  state.clubActivities = result[4];
   state.user.is_admin = !!result[3].is_admin;
   applyClubTheme();
 }
