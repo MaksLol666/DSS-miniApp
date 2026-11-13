@@ -1055,7 +1055,7 @@ async def _club_current_level_code(session, user_id: int) -> str:
     return current
 
 
-async async def _send_monthly_coupon_notice(user_id: int, code: str, discount: int, min_order: int, expires_at: datetime) -> bool:
+async def _send_monthly_coupon_notice(user_id: int, code: str, discount: int, min_order: int, expires_at: datetime) -> bool:
     expires_text = _promo_datetime_to_local(expires_at) or "конца месяца"
     message = (f"💜 Твоя ежемесячная привилегия DSS CLUB\n\n"
         f"Промокод: {code}\nСкидка: {discount} ₽\n"
