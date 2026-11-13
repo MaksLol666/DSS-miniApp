@@ -299,3 +299,13 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 @keyframes dss-card-orbit{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 @keyframes dss-card-embers{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:.85;transform:translateY(-8px)}}
 @keyframes dss-card-aurora{0%,100%{background-position:0% 50%;filter:hue-rotate(0)}50%{background-position:100% 50%;filter:hue-rotate(22deg)}}
+
+
+/* Monthly DSS CLUB privilege */
+.club-monthly-perk{position:relative;overflow:hidden;margin:14px 0 18px;padding:16px;border:1px solid color-mix(in srgb,var(--club-user-accent,var(--purple)) 48%,#30243d);border-radius:18px;background:radial-gradient(circle at 95% 5%,color-mix(in srgb,var(--club-user-accent,var(--purple)) 19%,transparent),transparent 46%),linear-gradient(135deg,#17121f,#0e0c15);box-shadow:0 0 22px color-mix(in srgb,var(--club-user-accent,var(--purple)) 12%,transparent)}
+.club-monthly-gem{display:grid;place-items:center;width:38px;height:38px;border:1px solid var(--club-user-accent,var(--purple));border-radius:13px;color:var(--club-user-accent,var(--purple));font-size:23px;text-shadow:0 0 12px currentColor;box-shadow:0 0 16px color-mix(in srgb,var(--club-user-accent,var(--purple)) 30%,transparent)}
+.club-monthly-code{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;padding:11px 13px;border:1px dashed color-mix(in srgb,var(--club-user-accent,var(--purple)) 65%,#fff);border-radius:12px;background:#08070dcc;font-family:'Orbitron',monospace;letter-spacing:1.2px}
+.club-monthly-code span{font-weight:800;color:#fff}
+.club-monthly-code b{font-family:system-ui,sans-serif;font-size:9px;letter-spacing:1px;color:var(--club-user-accent,var(--purple))}
+.club-monthly-promo{border-color:color-mix(in srgb,var(--purple) 55%,var(--line));box-shadow:0 0 18px color-mix(in srgb,var(--purple) 10%,transparent)}
+.club-level-monthly{margin-top:9px;padding-top:8px;border-top:1px solid #ffffff12;color:var(--purple);font-size:11px;font-weight:700}
