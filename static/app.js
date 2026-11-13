@@ -38,6 +38,21 @@ function esc(value) {
 function money(value) {
   return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Number(value || 0)) + ' ₽';
 }
+function applyClubTheme() {
+  const cosmetics = (state.clubActivities && state.clubActivities.cosmetics) || [];
+  const card = cosmetics.find(x => x.kind === 'card' && x.equipped);
+  const root = document.documentElement;
+  if (!card) {
+    root.style.setProperty('--purple', '#aa91fa');
+    root.style.setProperty('--purple-dark', '#29203f');
+    root.style.removeProperty('--club-user-accent');
+    return;
+  }
+  root.style.setProperty('--purple', card.card_accent || '#aa91fa');
+  root.style.setProperty('--purple-dark', card.card_primary || '#29203f');
+  root.style.setProperty('--club-user-accent', card.card_accent || '#aa91fa');
+  document.body.dataset.clubTheme = card.key;
+}
 function dateText(value) {
   if (!value) return '—';
   const date = new Date(value);
@@ -381,15 +396,17 @@ function clubCrestSvg(tone) {
 function renderClubMembershipCard(c, selectedTitle) {
   const meta = clubLevelMeta(c.level_title);
   const equippedCard = ((state.clubActivities && state.clubActivities.cosmetics) || []).find(x => x.kind === "card" && x.equipped);
-  const cardStyle = equippedCard ? "--club-accent:" + equippedCard.card_accent + ";--club-glow:" + equippedCard.card_accent + "66;--club-primary:" + equippedCard.card_primary + ";--club-secondary:" + equippedCard.card_secondary + ";" : "";
+  const fontMap = {orbitron:"'Orbitron',sans-serif",rajdhani:"'Rajdhani',sans-serif",exo2:"'Exo 2',sans-serif",montserrat:"'Montserrat',sans-serif",georgia:"Georgia,serif",mono:"'Courier New',monospace"};
+  const cardStyle = equippedCard ? "--club-accent:" + equippedCard.card_accent + ";--club-glow:" + equippedCard.card_accent + "66;--club-primary:" + equippedCard.card_primary + ";--club-secondary:" + equippedCard.card_secondary + ";--club-font:" + (fontMap[equippedCard.card_font] || fontMap.orbitron) + ";" : "";
   const cardAnimation = equippedCard ? " dss-custom-" + (equippedCard.card_animation || "pulse") : "";
+  const crest = equippedCard ? '<div class="dss-card-custom-crest" aria-hidden="true">' + esc(equippedCard.icon || '✦') + '</div>' : clubCrestSvg(meta.tone);
   const progress = Math.max(0, Math.min(100, Number(c.progress_percent || 0)));
   const title = selectedTitle ? selectedTitle.title : 'Без титула';
   return '<section class="dss-membership-card dss-card-' + meta.tone + cardAnimation + ' club-card-enter" style="' + cardStyle + '">' +
     '<div class="dss-card-glow"></div><div class="dss-card-orbit dss-card-orbit-a"></div><div class="dss-card-orbit dss-card-orbit-b"></div>' +
     '<svg class="dss-card-ornament" viewBox="0 0 360 230" preserveAspectRatio="none" aria-hidden="true"><path d="M-20 180 Q75 100 135 145 T270 75 T390 8"/><path d="M-20 205 Q80 120 145 165 T280 95 T390 30"/><path d="M210 -20 Q180 55 250 90 T330 190"/></svg>' +
     '<div class="dss-card-top"><span>DSS CLUB</span><span class="dss-card-edition">MEMBERSHIP · EST. DSS</span></div>' +
-    '<div class="dss-card-main"><div class="dss-card-copy"><div class="dss-card-kicker">YOUR STATUS · ' + esc(meta.label) + '</div><div class="dss-card-level">' + esc(c.level_title || 'MEMBER') + '</div><div class="dss-card-title">✦ ' + esc(title) + '</div></div><div class="dss-card-crest-wrap">' + clubCrestSvg(meta.tone) + '</div></div>' +
+    '<div class="dss-card-main"><div class="dss-card-copy"><div class="dss-card-kicker">YOUR STATUS · ' + esc(meta.label) + '</div><div class="dss-card-level">' + esc(c.level_title || 'MEMBER') + '</div><div class="dss-card-title">✦ ' + esc(title) + '</div></div><div class="dss-card-crest-wrap">' + crest + '</div></div>' +
     '<div class="dss-card-balance-row"><div><div class="dss-card-label">AVAILABLE BALANCE</div><div class="dss-card-balance">' + esc(c.balance || 0) + '<small> DCP</small></div></div><div class="dss-card-status"><span class="dss-status-dot"></span>' + (c.next_level ? 'IN PROGRESS' : 'MAX STATUS') + '</div></div>' +
     '<div class="dss-card-progress"><div style="width:' + progress + '%"></div></div><div class="dss-card-footer"><span>LEVEL PROGRESS</span><b>' + progress + '%</b><span class="dss-card-next">' + esc(c.next_level ? 'NEXT · ' + c.next_level : 'TOP MEMBER') + '</span></div>' +
     '</section>';
@@ -530,9 +547,11 @@ async function uploadProductImages(productId, files) {
 }
 
 async function loadBase() {
-  const result = await Promise.all([api('/api/categories'), api('/api/products'), api('/api/cart'), api('/api/profile')]);
+  const result = await Promise.all([api('/api/categories'), api('/api/products'), api('/api/cart'), api('/api/profile'), api('/api/club/activities'), api('/api/club')]);
   state.categories = result[0]; state.products = result[1]; state.cart = result[2]; state.profile = result[3];
+  state.clubActivities = result[4]; state.club = result[5];
   state.user.is_admin = !!result[3].is_admin;
+  applyClubTheme();
 }
 async function loadAdminTab(tab) {
   state.adminTab = tab;
@@ -554,7 +573,7 @@ async function loadPage(page) {
   if (page === 'orders') state.orders = await api('/api/orders');
   if (page === 'favorites') state.favorites = await api('/api/favorites');
   if (page === 'profile') state.profile = await api('/api/profile');
-  if (page === 'club') { const data = await Promise.all([api('/api/club/activities'), api('/api/club'), api('/api/club/season')]); state.clubActivities = data[0]; state.club = data[1]; state.season = data[2]; }
+  if (page === 'club') { const data = await Promise.all([api('/api/club/activities'), api('/api/club'), api('/api/club/season')]); state.clubActivities = data[0]; state.club = data[1]; state.season = data[2]; applyClubTheme(); }
   if (page === 'promos') state.promos = await api('/api/promos');
   if (page === 'leaders') {
     const data = await api(state.leaderKind === 'refs' ? '/api/topref' : '/api/top');
@@ -653,7 +672,7 @@ async function action(button) {
   if (name === 'admin-tab') { try { await loadAdminTab(button.dataset.tab); render(); } catch (error) { toast(error.message); } return; }
   if (name === 'reload-admin') { try { await loadAdminTab(state.adminTab); render(); } catch (error) { toast(error.message); } return; }
   if (name === 'equip-club-cosmetic') {
-    try { await api('/api/club/cosmetic/equip', { method: 'POST', body: JSON.stringify({ key: button.dataset.key }) }); state.clubActivities = await api('/api/club/activities'); render(); toast('Косметика применена'); }
+    try { await api('/api/club/cosmetic/equip', { method: 'POST', body: JSON.stringify({ key: button.dataset.key }) }); state.clubActivities = await api('/api/club/activities'); applyClubTheme(); render(); toast('Косметика применена'); }
     catch (error) { toast(error.message); }
     return;
   }
