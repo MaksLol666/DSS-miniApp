@@ -1751,7 +1751,7 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
             card_accent=valid_hex(data.get("card_accent"), "#c49aff"),
             card_animation=animation, requirement_type=requirement_type,
             requirement_value=max(0, min(100000000, int(data.get("requirement_value", 0)))),
-            card_font=card_font, max_supply=max(0, min(100000, int(data.get("max_supply", 0))), issued_count=0))
+            card_font=card_font, max_supply=max(0, min(100000, int(data.get("max_supply", 0)))), issued_count=0)
         await session.commit()
     return {"ok": True, "key": key}
 
