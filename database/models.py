@@ -270,6 +270,22 @@ class ClubCosmetic(Base):
     card_animation: Mapped[str] = mapped_column(String(16), default="pulse")
     requirement_type: Mapped[str] = mapped_column(String(24), default="none")
     requirement_value: Mapped[int] = mapped_column(Integer, default=0)
+    card_font: Mapped[str] = mapped_column(String(24), default="orbitron")
+    max_supply: Mapped[int] = mapped_column(Integer, default=0)
+    issued_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ClubMonthlyCoupon(Base):
+    __tablename__ = "club_monthly_coupons"
+    __table_args__ = (UniqueConstraint("user_id", "month_key", name="uq_club_monthly_coupon_user_month"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
+    month_key: Mapped[str] = mapped_column(String(7))
+    code: Mapped[str] = mapped_column(String(16), unique=True)
+    level_code: Mapped[str] = mapped_column(String(16))
+    discount: Mapped[int] = mapped_column(Integer)
+    min_order: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class ClubUserCosmetic(Base):
