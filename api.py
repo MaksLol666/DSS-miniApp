@@ -1324,7 +1324,12 @@ async def club_activities(user: dict = Depends(current_user)):
                     ClubUserCosmetic.user_id == uid, ClubUserCosmetic.cosmetic_key == card.key
                 ))).first()
                 if not owned_card:
-                    session.add(ClubUserCosmetic(user_id=uid, cosmetic_key=card.key, granted_by=None))
+                    minted = await session.execute(update(ClubCosmetic).where(
+                        ClubCosmetic.key == card.key,
+                        ((ClubCosmetic.max_supply == 0) | (ClubCosmetic.issued_count < ClubCosmetic.max_supply))
+                    ).values(issued_count=ClubCosmetic.issued_count + 1))
+                    if minted.rowcount:
+                        session.add(ClubUserCosmetic(user_id=uid, cosmetic_key=card.key, granted_by=None))
         await session.flush()
         cosmetics = (await session.execute(
             select(ClubCosmetic)
@@ -1344,7 +1349,8 @@ async def club_activities(user: dict = Depends(current_user)):
                     "icon": c.icon, "rarity": c.rarity, "equipped": equipped_by_kind.get(c.kind) == c.key,
                     "card_primary": c.card_primary, "card_secondary": c.card_secondary, "card_accent": c.card_accent,
                     "card_animation": c.card_animation, "requirement_type": c.requirement_type,
-                    "requirement_value": int(c.requirement_value or 0)}
+                    "requirement_value": int(c.requirement_value or 0), "card_font": c.card_font,
+                    "max_supply": int(c.max_supply or 0), "issued_count": int(c.issued_count or 0)}
                     for c in cosmetics]}
 
 
@@ -1711,7 +1717,8 @@ async def admin_club_cosmetics(user: dict = Depends(admin_user)):
                  "icon": x.icon, "rarity": x.rarity, "active": bool(x.active),
                  "card_primary": x.card_primary, "card_secondary": x.card_secondary, "card_accent": x.card_accent,
                  "card_animation": x.card_animation, "requirement_type": x.requirement_type,
-                 "requirement_value": int(x.requirement_value or 0)} for x in rows]
+                 "requirement_value": int(x.requirement_value or 0), "card_font": x.card_font,
+                 "max_supply": int(x.max_supply or 0), "issued_count": int(x.issued_count or 0)} for x in rows]
 
 
 @app.post("/api/admin/club/cosmetics")
@@ -1726,8 +1733,11 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
             raise HTTPException(409, "Косметика с таким ключом уже существует.")
         requirement_type = str(data.get("requirement_type", "none"))
         animation = str(data.get("card_animation", "pulse"))
-        if requirement_type not in ("none", "orders", "lifetime_dcp", "referrals") or animation not in ("none", "pulse", "sheen", "aurora"):
-            raise HTTPException(400, "Некорректное условие получения или анимация карточки.")
+        card_font = str(data.get("card_font", "orbitron"))
+        allowed_animations = ("none", "pulse", "sheen", "aurora", "scan", "shimmer", "orbit", "ember")
+        allowed_fonts = ("orbitron", "rajdhani", "exo2", "montserrat", "georgia", "mono")
+        if requirement_type not in ("none", "orders", "lifetime_dcp", "referrals") or animation not in allowed_animations or card_font not in allowed_fonts:
+            raise HTTPException(400, "Некорректное условие, анимация или шрифт карточки.")
         def valid_hex(value, fallback):
             value = str(value or fallback).strip()
             if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
@@ -1740,7 +1750,8 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
             card_secondary=valid_hex(data.get("card_secondary"), "#0b0812"),
             card_accent=valid_hex(data.get("card_accent"), "#c49aff"),
             card_animation=animation, requirement_type=requirement_type,
-            requirement_value=max(0, min(100000000, int(data.get("requirement_value", 0))))))
+            requirement_value=max(0, min(100000000, int(data.get("requirement_value", 0)))),
+            card_font=card_font, max_supply=max(0, min(100000, int(data.get("max_supply", 0))), issued_count=0))
         await session.commit()
     return {"ok": True, "key": key}
 
@@ -1771,9 +1782,15 @@ async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict =
                     raise HTTPException(400, "Цвет карточки должен быть в формате #RRGGBB.")
                 setattr(item, field, value)
         if "card_animation" in data:
-            if data["card_animation"] not in ("none", "pulse", "sheen", "aurora"):
+            if data["card_animation"] not in ("none", "pulse", "sheen", "aurora", "scan", "shimmer", "orbit", "ember"):
                 raise HTTPException(400, "Неизвестная анимация карточки.")
             item.card_animation = data["card_animation"]
+        if "card_font" in data:
+            if data["card_font"] not in ("orbitron", "rajdhani", "exo2", "montserrat", "georgia", "mono"):
+                raise HTTPException(400, "Неизвестный шрифт карточки.")
+            item.card_font = data["card_font"]
+        if "max_supply" in data:
+            item.max_supply = max(0, min(100000, int(data["max_supply"]))
         if "requirement_type" in data:
             if data["requirement_type"] not in ("none", "orders", "lifetime_dcp", "referrals"):
                 raise HTTPException(400, "Неизвестное условие получения карточки.")
@@ -1809,6 +1826,12 @@ async def admin_club_grant_cosmetic(user_id: int, cosmetic_key: str, user: dict 
             ClubUserCosmetic.user_id == user_id, ClubUserCosmetic.cosmetic_key == cosmetic_key
         ))).first()
         if not exists:
+            minted = await session.execute(update(ClubCosmetic).where(
+                ClubCosmetic.key == cosmetic_key,
+                ((ClubCosmetic.max_supply == 0) | (ClubCosmetic.issued_count < ClubCosmetic.max_supply))
+            ).values(issued_count=ClubCosmetic.issued_count + 1))
+            if not minted.rowcount:
+                raise HTTPException(409, "Лимит выпуска этой клубной карточки исчерпан.")
             session.add(ClubUserCosmetic(user_id=user_id, cosmetic_key=cosmetic_key, granted_by=user["id"]))
         await session.commit()
     return {"ok": True}
