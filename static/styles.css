@@ -367,3 +367,8 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 @keyframes dss-rainbow-hue{to{filter:hue-rotate(360deg) drop-shadow(0 0 7px #ff00d4)}}
 
 @media(max-width:420px){.dss-membership-card{aspect-ratio:1.28;padding:16px 14px 13px}.dss-card-main{min-height:94px}}
+
+/* FINAL FIX: rainbow accent must be a border ring, never a card-sized overlay */
+.dss-membership-card.dss-rainbow-accent{position:relative;isolation:isolate;border-color:transparent!important;overflow:hidden}
+.dss-membership-card.dss-rainbow-accent:before{content:"";position:absolute;inset:0;box-sizing:border-box;padding:3px;border:0;border-radius:inherit;pointer-events:none;z-index:0;background:conic-gradient(#ff1744,#ff9100,#ffee00,#00e676,#00b0ff,#304ffe,#d500f9,#ff1744);-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude;animation:dss-rainbow-hue 6s linear infinite}
+.dss-membership-card.dss-rainbow-accent>*{position:relative;z-index:1}
