@@ -244,6 +244,7 @@ function render() {
     profile: renderProfile, club: renderClub, favorites: renderFavorites, promos: renderPromos, leaders: renderLeaders, admin: renderAdmin
   };
   content.innerHTML = (pages[state.page] || renderCatalog)();
+  if (state.page === 'admin' && state.adminTab === 'club') updateExclusiveCardPreview(document.getElementById('exclusive-card-form'));
   content.classList.remove('dss-page-enter');
   void content.offsetWidth;
   content.classList.add('dss-page-enter');
