@@ -146,6 +146,8 @@ main{padding-bottom:12px}.hero{position:relative;overflow:hidden;border:1px soli
 
 /* DSS CLUB — six bespoke neon membership cards */
 .dss-membership-card{--club-accent:#aebeff;--club-glow:rgba(139,156,255,.48);position:relative;isolation:isolate;overflow:hidden;min-height:260px;margin:10px 0 18px;padding:19px 18px 16px;border:1px solid color-mix(in srgb,var(--club-accent) 88%,white);border-radius:25px;background:radial-gradient(ellipse at 88% 8%,var(--club-glow),transparent 37%),linear-gradient(128deg,#080b19 0%,#090a13 54%,#11101b 100%);box-shadow:0 0 12px var(--club-glow),0 0 34px color-mix(in srgb,var(--club-glow) 70%,transparent),inset 0 0 28px color-mix(in srgb,var(--club-accent) 10%,transparent);animation:dss-card-breathe 4.8s ease-in-out infinite}
+/* Keep membership cards at the same landscape proportions in profile and builder. */
+.dss-membership-card{width:100%;height:auto;min-height:0;aspect-ratio:1.35;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;align-self:start;}
 .dss-card-member{--club-accent:#c3caff;--club-glow:rgba(130,151,255,.43)}
 .dss-card-active{--club-accent:#48ff9b;--club-glow:rgba(36,255,139,.38)}
 .dss-card-premium{--club-accent:#d64cff;--club-glow:rgba(185,45,255,.45)}
@@ -341,7 +343,7 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
   background-size:400% 400% !important;
   animation:dss-rainbow-flow 4s linear infinite,dss-card-breathe 4.8s ease-in-out infinite;
 }
-.dss-membership-card.dss-rainbow-accent:before{content:"";position:absolute;z-index:0;inset:0;box-sizing:border-box;border-radius:inherit;padding:3px;pointer-events:none;background:conic-gradient(#ff1744,#ff9100,#ffee00,#00e676,#00b0ff,#304ffe,#d500f9,#ff1744);-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude;filter:drop-shadow(0 0 7px #ff00d4);animation:dss-rainbow-hue 6s linear infinite}
+.dss-membership-card.dss-rainbow-accent:before{content:"";position:absolute;z-index:0;inset:0;box-sizing:border-box;border:3px solid transparent;border-radius:inherit;pointer-events:none;background:linear-gradient(transparent,transparent) padding-box,conic-gradient(#ff1744,#ff9100,#ffee00,#00e676,#00b0ff,#304ffe,#d500f9,#ff1744) border-box;filter:drop-shadow(0 0 7px #ff00d4);animation:dss-rainbow-hue 6s linear infinite}
 .dss-membership-card.dss-rainbow-ornament .dss-card-ornament{stroke:#ff4dff!important;filter:hue-rotate(0deg) saturate(2)}
 .dss-membership-card.dss-rainbow-text .dss-card-level,
 .dss-membership-card.dss-rainbow-text .dss-card-title,
@@ -363,3 +365,5 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 .exclusive-card-builder #exclusive-card-preview{display:block;visibility:visible;opacity:1}
 
 @keyframes dss-rainbow-hue{to{filter:hue-rotate(360deg) drop-shadow(0 0 7px #ff00d4)}}
+
+@media(max-width:420px){.dss-membership-card{aspect-ratio:1.28;padding:16px 14px 13px}.dss-card-main{min-height:94px}}
