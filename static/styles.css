@@ -342,7 +342,7 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
   animation:dss-rainbow-flow 4s linear infinite,dss-card-breathe 4.8s ease-in-out infinite;
 }
 .dss-membership-card.dss-rainbow-accent:before{z-index:3;pointer-events:none;filter:drop-shadow(0 0 8px #ff00d4)}
-.dss-membership-card.dss-rainbow-ornament .dss-card-ornament{stroke:url(#dss-rainbow-stroke)!important;filter:hue-rotate(0deg) saturate(2)}
+.dss-membership-card.dss-rainbow-ornament .dss-card-ornament{stroke:#ff4dff!important;filter:hue-rotate(0deg) saturate(2)}
 .dss-membership-card.dss-rainbow-text .dss-card-level,
 .dss-membership-card.dss-rainbow-text .dss-card-title,
 .dss-membership-card.dss-rainbow-text .dss-card-label,
