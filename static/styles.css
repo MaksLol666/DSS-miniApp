@@ -341,7 +341,7 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
   background-size:400% 400% !important;
   animation:dss-rainbow-flow 4s linear infinite,dss-card-breathe 4.8s ease-in-out infinite;
 }
-.dss-membership-card.dss-rainbow-accent:before{z-index:3;pointer-events:none;filter:drop-shadow(0 0 8px #ff00d4)}
+.dss-membership-card.dss-rainbow-accent:before{content:"";position:absolute;z-index:0;inset:0;border-radius:inherit;padding:3px;pointer-events:none;background:conic-gradient(#ff1744,#ff9100,#ffee00,#00e676,#00b0ff,#304ffe,#d500f9,#ff1744);mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude;filter:drop-shadow(0 0 8px #ff00d4);animation:dss-rainbow-spin 5s linear infinite}
 .dss-membership-card.dss-rainbow-ornament .dss-card-ornament{stroke:#ff4dff!important;filter:hue-rotate(0deg) saturate(2)}
 .dss-membership-card.dss-rainbow-text .dss-card-level,
 .dss-membership-card.dss-rainbow-text .dss-card-title,
@@ -354,3 +354,10 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 }
 @keyframes dss-rainbow-flow{0%{background-position:0% 50%}100%{background-position:100% 50%}}
 @media(max-width:420px){.exclusive-preview-wrap{padding:10px}#exclusive-card-preview{min-height:205px;padding:15px 13px}#exclusive-card-preview .dss-card-crest-wrap{flex-basis:68px}#exclusive-card-preview .dss-card-custom-crest{width:60px;height:60px;font-size:32px}}
+
+/* Keep the animated rainbow outline clipped to the border; never paint a second card over the content. */
+.dss-membership-card.dss-rainbow-accent{isolation:isolate}
+.dss-membership-card.dss-rainbow-accent:before{z-index:0!important}
+.dss-membership-card.dss-rainbow-accent>*{position:relative;z-index:1}
+.exclusive-card-builder .exclusive-preview-wrap{order:-1}
+.exclusive-card-builder #exclusive-card-preview{display:block;visibility:visible;opacity:1}
