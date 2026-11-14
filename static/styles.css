@@ -323,3 +323,34 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 @keyframes dss-rainbow-flow{0%{background-position:0% 50%}100%{background-position:100% 50%}}
 @keyframes dss-rainbow-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.dss-membership-card.dss-rainbow-primary,.dss-membership-card.dss-rainbow-secondary,.dss-membership-card.dss-rainbow-accent:before{animation:none!important}}
+
+
+/* Exclusive card builder: responsive live preview */
+.exclusive-preview-wrap{margin:18px 0 14px;padding:14px;border:1px solid #65458a;border-radius:18px;background:linear-gradient(145deg,#171020,#0d0b14);overflow:hidden}
+.exclusive-preview-wrap>.field-label{display:block;margin-bottom:10px;color:#e7d4ff;font-weight:800;letter-spacing:.5px}
+#exclusive-card-preview{width:100%;min-height:220px;margin:0 auto;box-sizing:border-box;overflow:hidden}
+#exclusive-card-preview .dss-card-main{gap:8px}
+#exclusive-card-preview .dss-card-level{font-size:clamp(22px,6vw,32px);overflow-wrap:anywhere}
+#exclusive-card-preview .dss-card-crest-wrap{flex:0 0 82px}
+#exclusive-card-preview .dss-card-custom-crest{width:70px;height:70px;font-size:38px}
+#exclusive-card-preview .dss-card-progress{margin-top:9px}
+#exclusive-card-preview .dss-card-footer{gap:6px}
+#exclusive-card-preview .dss-card-next{max-width:48%}
+.dss-membership-card.dss-rainbow-primary,.dss-membership-card.dss-rainbow-secondary{
+  background:linear-gradient(110deg,#ff1744 0%,#ff9100 16%,#ffee00 32%,#00e676 48%,#00b0ff 64%,#304ffe 78%,#d500f9 90%,#ff1744 100%) !important;
+  background-size:400% 400% !important;
+  animation:dss-rainbow-flow 4s linear infinite,dss-card-breathe 4.8s ease-in-out infinite;
+}
+.dss-membership-card.dss-rainbow-accent:before{z-index:3;pointer-events:none;filter:drop-shadow(0 0 8px #ff00d4)}
+.dss-membership-card.dss-rainbow-ornament .dss-card-ornament{stroke:url(#dss-rainbow-stroke)!important;filter:hue-rotate(0deg) saturate(2)}
+.dss-membership-card.dss-rainbow-text .dss-card-level,
+.dss-membership-card.dss-rainbow-text .dss-card-title,
+.dss-membership-card.dss-rainbow-text .dss-card-label,
+.dss-membership-card.dss-rainbow-text .dss-card-balance,
+.dss-membership-card.dss-rainbow-text .dss-card-footer b{
+  background:linear-gradient(90deg,#ff1744,#ff9100,#ffee00,#00e676,#00b0ff,#304ffe,#d500f9,#ff1744);
+  background-size:300% 100%;background-clip:text;-webkit-background-clip:text;color:transparent!important;
+  animation:dss-rainbow-flow 4s linear infinite;
+}
+@keyframes dss-rainbow-flow{0%{background-position:0% 50%}100%{background-position:100% 50%}}
+@media(max-width:420px){.exclusive-preview-wrap{padding:10px}#exclusive-card-preview{min-height:205px;padding:15px 13px}#exclusive-card-preview .dss-card-crest-wrap{flex-basis:68px}#exclusive-card-preview .dss-card-custom-crest{width:60px;height:60px;font-size:32px}}
