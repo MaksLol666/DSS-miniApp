@@ -341,7 +341,7 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
   background-size:400% 400% !important;
   animation:dss-rainbow-flow 4s linear infinite,dss-card-breathe 4.8s ease-in-out infinite;
 }
-.dss-membership-card.dss-rainbow-accent:before{content:"";position:absolute;z-index:0;inset:0;border-radius:inherit;padding:3px;pointer-events:none;background:conic-gradient(#ff1744,#ff9100,#ffee00,#00e676,#00b0ff,#304ffe,#d500f9,#ff1744);mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude;filter:drop-shadow(0 0 8px #ff00d4);animation:dss-rainbow-spin 5s linear infinite}
+.dss-membership-card.dss-rainbow-accent:before{content:"";position:absolute;z-index:0;inset:0;box-sizing:border-box;border-radius:inherit;padding:3px;pointer-events:none;background:conic-gradient(#ff1744,#ff9100,#ffee00,#00e676,#00b0ff,#304ffe,#d500f9,#ff1744);-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude;filter:drop-shadow(0 0 7px #ff00d4);animation:dss-rainbow-hue 6s linear infinite}
 .dss-membership-card.dss-rainbow-ornament .dss-card-ornament{stroke:#ff4dff!important;filter:hue-rotate(0deg) saturate(2)}
 .dss-membership-card.dss-rainbow-text .dss-card-level,
 .dss-membership-card.dss-rainbow-text .dss-card-title,
@@ -361,3 +361,5 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 .dss-membership-card.dss-rainbow-accent>*{position:relative;z-index:1}
 .exclusive-card-builder .exclusive-preview-wrap{order:-1}
 .exclusive-card-builder #exclusive-card-preview{display:block;visibility:visible;opacity:1}
+
+@keyframes dss-rainbow-hue{to{filter:hue-rotate(360deg) drop-shadow(0 0 7px #ff00d4)}}
