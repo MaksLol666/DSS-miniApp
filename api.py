@@ -150,6 +150,8 @@ class ProductInput(BaseModel):
     price: float = Field(gt=0, le=10000000)
     stock_qty: int = Field(default=1, ge=0, le=1000000)
     cost_price: float | None = Field(default=None, ge=0, le=10000000)
+    public_release_at: str | None = None
+    rank_release_dates: dict[str, str] | None = None
 
 
 class ProductPatch(BaseModel):
@@ -160,6 +162,8 @@ class ProductPatch(BaseModel):
     in_stock: bool | None = None
     stock_qty: int | None = Field(default=None, ge=0, le=1000000)
     cost_price: float | None = Field(default=None, ge=0, le=10000000)
+    public_release_at: str | None = None
+    rank_release_dates: dict[str, str] | None = None
 
 
 class ProductId(BaseModel):
@@ -227,6 +231,8 @@ async def _migrate_legacy_columns() -> None:
         ("club_task_configs", "min_level", "TEXT DEFAULT 'MEMBER'"),
         ("club_task_configs", "secret", "INTEGER DEFAULT 0"),
         ("club_cosmetics", "requirement_level", "TEXT DEFAULT 'MEMBER'"),
+        ("products", "public_release_at", "DATETIME"),
+        ("products", "rank_release_dates", "TEXT DEFAULT '{}'"),
         ("club_cosmetics", "card_primary", "TEXT DEFAULT '#26133b'"),
         ("club_cosmetics", "card_secondary", "TEXT DEFAULT '#0b0812'"),
         ("club_cosmetics", "card_accent", "TEXT DEFAULT '#c49aff'"),
@@ -441,6 +447,55 @@ def _promo_datetime_to_local(value: datetime | None) -> str | None:
     return value.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=3))).strftime("%Y-%m-%dT%H:%M")
 
 
+
+
+def _normalize_rank_release_dates(value: dict | None, levels: list[dict]) -> dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise HTTPException(400, "Даты раннего доступа должны быть объектом по рангам.")
+    allowed = {str(level.get("code", "MEMBER")).upper() for level in levels}
+    result = {}
+    for raw_level, raw_date in value.items():
+        level = str(raw_level).upper()
+        if level not in allowed:
+            raise HTTPException(400, f"Неизвестный ранг раннего доступа: {level}.")
+        parsed = _promo_datetime(str(raw_date))
+        if parsed is None:
+            raise HTTPException(400, "Укажи корректную дату раннего доступа.")
+        result[level] = parsed.isoformat()
+    return result
+
+
+async def _product_release_for_user(session, product: Product, user_id: int) -> tuple[bool, str | None]:
+    config = await _club_config(session)
+    level = await _club_current_level_code(session, user_id)
+    try:
+        dates = json.loads(product.rank_release_dates or "{}")
+        if not isinstance(dates, dict):
+            dates = {}
+    except (TypeError, ValueError):
+        dates = {}
+    raw_date = dates.get(level) or (product.public_release_at.isoformat() if product.public_release_at else None)
+    if not raw_date:
+        return True, None
+    try:
+        release_at = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+        if release_at.tzinfo is not None:
+            release_at = release_at.astimezone(timezone.utc).replace(tzinfo=None)
+    except (TypeError, ValueError):
+        log.warning("Invalid product release date product_id=%s level=%s", product.id, level)
+        return False, None
+    available = datetime.utcnow() >= release_at
+    return available, _promo_datetime_to_local(release_at)
+
+
+async def _ensure_product_released(session, product: Product, user_id: int) -> None:
+    available, _release = await _product_release_for_user(session, product, user_id)
+    if not available:
+        raise HTTPException(403, "Этот товар пока доступен только участникам более высокого ранга DSS CLUB или откроется позже.")
+
+
 def _validate_promo_for_items(promo: Promocode, items: list[dict]) -> None:
     if not _promo_is_active(promo):
         raise HTTPException(409, "Срок действия промокода ещё не начался или уже закончился.")
@@ -610,7 +665,15 @@ async def products(category_id: int | None = None, user: dict = Depends(current_
         if category_id is not None:
             query = query.where(Product.category_id == category_id)
         rows = (await session.execute(query.order_by(Product.category_id, Product.number))).scalars().all()
-        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0), "images": p.images} for p in rows]
+        result = []
+        for p in rows:
+            available, release_at = await _product_release_for_user(session, p, user["id"])
+            if not available:
+                continue
+            result.append({"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand,
+                "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock),
+                "stock_qty": int(p.stock_qty or 0), "images": p.images, "release_at": release_at})
+        return result
 
 
 @app.get("/api/favorites")
@@ -654,6 +717,7 @@ async def cart_add(data: ProductId, user: dict = Depends(current_user)):
         p = await session.get(Product, data.product_id)
         if not p or not p.in_stock or int(p.stock_qty or 0) <= 0:
             raise HTTPException(409, "Товар больше недоступен.")
+        await _ensure_product_released(session, p, user["id"])
         existing = (await session.execute(select(CartItem).where(CartItem.user_id == user["id"], CartItem.product_id == p.id))).scalar_one_or_none()
         if existing:
             if int(existing.quantity or 1) >= int(p.stock_qty or 0):
@@ -674,6 +738,7 @@ async def cart_set_quantity(data: CartQuantityInput, user: dict = Depends(curren
         product = await session.get(Product, data.product_id)
         if not product or not product.in_stock or data.quantity > int(product.stock_qty or 0):
             raise HTTPException(409, f"Доступно не больше {int(product.stock_qty or 0) if product else 0} шт.")
+        await _ensure_product_released(session, product, user["id"])
         item.quantity = data.quantity
         await session.commit()
     return await _cart(user["id"])
@@ -2357,7 +2422,9 @@ async def admin_products(user: dict = Depends(admin_user)):
             .group_by(OrderItem.product_id)
         )).all()
         reserved = {int(product_id): int(quantity or 0) for product_id, quantity in reserved_rows}
-        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0), "reserved_qty": reserved.get(p.id, 0), "images": p.images} for p in rows]
+        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0), "reserved_qty": reserved.get(p.id, 0), "images": p.images,
+                 "public_release_at": _promo_datetime_to_local(p.public_release_at),
+                 "rank_release_dates": {str(k): _promo_datetime_to_local(datetime.fromisoformat(str(v))) for k, v in (json.loads(p.rank_release_dates or "{}") if isinstance(json.loads(p.rank_release_dates or "{}"), dict) else {}).items()}} for p in rows]
 
 
 @app.post("/api/admin/products")
@@ -2366,7 +2433,10 @@ async def admin_product_create(data: ProductInput, user: dict = Depends(admin_us
         if not await session.get(Category, data.category_id):
             raise HTTPException(404, "Категория не найдена.")
         n = (await session.execute(select(func.max(Product.number)).where(Product.category_id == data.category_id))).scalar() or 0
-        product = Product(category_id=data.category_id, number=n + 1, brand=data.brand.strip(), flavor=data.flavor.strip(), price=data.price, cost_price=data.cost_price, stock_qty=data.stock_qty, in_stock=data.stock_qty > 0)
+        config = await _club_config(session)
+        rank_dates = _normalize_rank_release_dates(data.rank_release_dates, config.get("levels", CLUB_LEVELS))
+        product = Product(category_id=data.category_id, number=n + 1, brand=data.brand.strip(), flavor=data.flavor.strip(), price=data.price, cost_price=data.cost_price, stock_qty=data.stock_qty, in_stock=data.stock_qty > 0,
+            public_release_at=_promo_datetime(data.public_release_at), rank_release_dates=json.dumps(rank_dates, ensure_ascii=False))
         session.add(product)
         await session.commit()
         await session.refresh(product)
@@ -2451,6 +2521,11 @@ async def admin_product_update(product_id: int, data: ProductPatch, user: dict =
         for key, value in values.items():
             if key == "cost_price":
                 p.cost_price = value
+            elif key == "public_release_at":
+                p.public_release_at = _promo_datetime(value)
+            elif key == "rank_release_dates":
+                config = await _club_config(session)
+                p.rank_release_dates = json.dumps(_normalize_rank_release_dates(value, config.get("levels", CLUB_LEVELS)), ensure_ascii=False)
             elif value is not None:
                 setattr(p, key, value.strip() if key in ("brand", "flavor") else value)
         if "stock_qty" in values and values["stock_qty"] is not None:
