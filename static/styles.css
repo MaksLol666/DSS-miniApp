@@ -406,3 +406,6 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 @keyframes dss-avatar-orbit{to{transform:rotate(360deg)}}
 @keyframes dss-avatar-pulse{50%{opacity:.35;filter:drop-shadow(0 0 8px var(--avatar-frame-accent,#c49aff))}}
 @media(prefers-reduced-motion:reduce){.profile-avatar.avatar-frame-orbit:before,.profile-avatar.avatar-frame-sheen:before,.profile-avatar.avatar-frame-shimmer:before{animation:none}}
+
+.profile-avatar-glyph{display:grid;place-items:center;width:100%;height:100%;border-radius:50%;font-size:31px;line-height:1;background:radial-gradient(circle at 30% 25%,#49346a,#15101f 72%);text-shadow:0 0 14px var(--avatar-frame-accent,#c49aff)}
+.profile-avatar.avatar-frame-pulse:before{animation:dss-avatar-pulse 2.8s ease-in-out infinite}
