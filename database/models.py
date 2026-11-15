@@ -267,6 +267,7 @@ class ClubCosmetic(Base):
     title: Mapped[str] = mapped_column(String(96))
     description: Mapped[str] = mapped_column(String(256), default="")
     icon: Mapped[str] = mapped_column(String(32), default="✦")
+    image_url: Mapped[str] = mapped_column(String(512), default="")
     rarity: Mapped[str] = mapped_column(String(16), default="common")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     card_primary: Mapped[str] = mapped_column(String(16), default="#26133b")
