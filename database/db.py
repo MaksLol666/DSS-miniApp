@@ -35,6 +35,7 @@ async def init_db() -> None:
                 },
                 "club_cosmetics": {
                     "requirement_level": "VARCHAR(16) NOT NULL DEFAULT 'MEMBER'",
+                    "image_url": "VARCHAR(512) NOT NULL DEFAULT ''",
                 },
             }
             for table, columns_to_add in migrations.items():
