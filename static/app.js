@@ -361,7 +361,9 @@ function renderProfile() {
   const profileFrame = profileCosmetics.find(x => x.kind === 'frame' && x.equipped);
   const profileEffect = profileCosmetics.find(x => x.kind === 'effect' && x.equipped);
   const avatarUrl = profileAvatar && profileAvatar.image_url ? profileAvatar.image_url : p.photo_url;
-  const avatar = avatarUrl ? '<img src="' + esc(avatarUrl) + '" alt="" class="profile-avatar-image">' : esc(initial);
+  const avatar = profileAvatar
+    ? (profileAvatar.image_url ? '<img src="' + esc(profileAvatar.image_url) + '" alt="" class="profile-avatar-image">' : '<span class="profile-avatar-glyph">' + esc(profileAvatar.icon || '✦') + '</span>')
+    : (avatarUrl ? '<img src="' + esc(avatarUrl) + '" alt="" class="profile-avatar-image">' : esc(initial));
   const avatarDecoration = (profileEffect ? 'filter:drop-shadow(0 0 10px #c084fc);' : '') +
     (profileFrame ? '--avatar-frame-accent:' + esc(profileFrame.card_accent || '#c49aff') + ';--avatar-frame-secondary:' + esc(profileFrame.card_primary || '#241333') + ';' : '');
   const avatarFrameClass = profileFrame ? ' has-avatar-frame avatar-frame-' + esc(profileFrame.card_animation || 'pulse') : '';
@@ -495,7 +497,7 @@ function renderClub() {
     '<div class="section-head"><div><h2 class="section-title">Уровни клуба</h2><div class="section-sub">Для перехода нужны все условия уровня</div></div></div><div class="club-level-list">' + levels + '</div>' +
     '<div class="section-head"><div><h2 class="section-title">Задания</h2><div class="section-sub">Ежедневные и еженедельные активности</div></div></div>' + tasks +
     '<div class="section-head"><div><h2 class="section-title">Достижения</h2><div class="section-sub">Клубные значки и титулы</div></div></div>' + (achievements || '<div class="empty">Достижения скоро появятся.</div>') +
-    '<div class="section-head"><div><h2 class="section-title">Моя коллекция</h2><div class="section-sub">Титулы, значки, рамки и эффекты</div></div></div>' + (cosmeticInventory || '<div class="empty">Пока нет косметических предметов.</div>') +
+    '<div class="section-head"><div><h2 class="section-title">Моя коллекция</h2><div class="section-sub">Аватарки, рамки, титулы, значки и эффекты</div></div></div>' + (cosmeticInventory || '<div class="empty">Пока нет косметических предметов.</div>') +
     '<div class="section-head"><div><h2 class="section-title">История сезонных наград</h2></div></div><div class="card">' + (rewardHistory || '<div class="empty">Сезонных наград пока нет.</div>') + '</div>' +
     '<div class="section-head"><div><h2 class="section-title">История DCP</h2><div class="section-sub">Последние начисления клуба</div></div></div><div class="card">' + ledger + '</div><div class="item-sub" style="text-align:center;margin:12px 0">DCP — внутренняя бонусная валюта клуба. Не является денежным балансом и не выводится.</div>';
 }
