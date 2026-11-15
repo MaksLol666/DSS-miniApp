@@ -52,10 +52,6 @@ async def init_db() -> None:
                 await connection.exec_driver_sql("ALTER TABLE products ADD COLUMN image_urls VARCHAR(4096) NOT NULL DEFAULT '[]'")
             if "cost_price" not in columns:
                 await connection.exec_driver_sql("ALTER TABLE products ADD COLUMN cost_price FLOAT")
-        else:
-            await connection.exec_driver_sql(
-                "ALTER TABLE club_cosmetics ADD COLUMN IF NOT EXISTS image_url VARCHAR(512) NOT NULL DEFAULT ''"
-            )
             await connection.exec_driver_sql("UPDATE products SET stock_qty = CASE WHEN in_stock = 1 THEN 1 ELSE 0 END WHERE stock_qty IS NULL OR stock_qty < 0")
             for table in ("cart_items", "order_items"):
                 result = await connection.exec_driver_sql(f"PRAGMA table_info({table})")
@@ -98,3 +94,8 @@ async def init_db() -> None:
             review_columns = {row[1] for row in result.fetchall()}
             if "status" not in review_columns:
                 await connection.exec_driver_sql("ALTER TABLE reviews ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'pending'")
+
+        else:
+            await connection.exec_driver_sql(
+                "ALTER TABLE club_cosmetics ADD COLUMN IF NOT EXISTS image_url VARCHAR(512) NOT NULL DEFAULT ''"
+            )
