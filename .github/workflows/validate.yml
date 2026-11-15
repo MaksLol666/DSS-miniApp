@@ -2,7 +2,7 @@ name: Validate DSS Mini App
 
 on:
   push:
-    branches: [main, rewrite-v2, fix/club-dcp-fixed-discounts, fix/miniapp-infinite-loading, fix/telegram-sdk-blocking]
+    branches: [main, rewrite-v2, fix/club-dcp-fixed-discounts, fix/miniapp-infinite-loading, fix/telegram-sdk-blocking, feature/dss-club-ranks]
   workflow_dispatch:
 
 permissions:
