@@ -2621,9 +2621,13 @@ async def admin_users(q: str | None = None, user: dict = Depends(admin_user)):
         rows = (await session.execute(query)).scalars().all()
         result = []
         for u in rows:
-            count = (await _club_metrics(session, u.id))["orders"]
+            metrics = await _club_metrics(session, u.id)
+            account = await session.get(ClubAccount, u.id)
             promos = (await session.execute(select(func.count(Promocode.code)).where(Promocode.owner_id == u.id, Promocode.used.is_(False), Promocode.used_count < Promocode.max_uses))).scalar() or 0
-            result.append({"id": u.id, "username": u.username, "balance": float(u.balance or 0), "orders_count": int(count), "orders_adjustment": int((await session.get(ClubAccount, u.id)).orders_adjustment or 0) if await session.get(ClubAccount, u.id) else 0, "referrals_count": int(u.referrals_count or 0), "active_promos": int(promos), "is_banned": bool(u.is_banned)})
+            result.append({"id": u.id, "username": u.username, "balance": float(u.balance or 0),
+                "orders_count": int(metrics["orders"]), "orders_adjustment": int(account.orders_adjustment or 0) if account else 0,
+                "referrals_count": int(metrics["referrals"]), "referrals_adjustment": int(account.referrals_adjustment or 0) if account else 0,
+                "active_promos": int(promos), "is_banned": bool(u.is_banned)})
         return result
 
 
