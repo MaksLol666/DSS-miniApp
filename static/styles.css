@@ -388,3 +388,21 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 
 @media(max-width:420px){.dss-membership-card{aspect-ratio:1.28;padding:16px 14px 13px}.dss-card-main{min-height:94px}}
 
+
+/* DSS CLUB avatar cosmetics */
+.profile-avatar{position:relative;flex:0 0 58px;width:58px;height:58px;border-radius:50%;overflow:visible;box-sizing:border-box}
+.profile-avatar-image{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%;overflow:hidden}
+.profile-avatar.has-avatar-frame{border:3px solid var(--avatar-frame-accent,#c49aff);padding:2px;background:var(--avatar-frame-secondary,#241333);box-shadow:0 0 0 2px var(--avatar-frame-secondary,#241333),0 0 18px var(--avatar-frame-accent,#c49aff)}
+.profile-avatar.has-avatar-frame:before{content:"";position:absolute;inset:-7px;border:1px solid var(--avatar-frame-accent,#c49aff);border-radius:50%;opacity:.85;pointer-events:none}
+.profile-avatar.avatar-frame-orbit:before{inset:-9px;border-width:2px;border-style:dashed;animation:dss-avatar-orbit 18s linear infinite}
+.profile-avatar.avatar-frame-sheen:before,.profile-avatar.avatar-frame-shimmer:before{animation:dss-avatar-pulse 2.8s ease-in-out infinite}
+.profile-avatar.avatar-frame-ember{box-shadow:0 0 0 2px var(--avatar-frame-secondary,#241333),0 0 24px var(--avatar-frame-accent,#c49aff)}
+.profile-avatar-badge{position:absolute;right:-6px;bottom:-5px;background:#211334;border:1px solid var(--avatar-frame-accent,#c49aff);border-radius:50%;width:25px;height:25px;display:grid;place-items:center;font-size:14px;z-index:2}
+.club-avatar-preview-wrap{display:flex;justify-content:center;padding:12px}
+.club-avatar-preview{width:104px;height:104px;object-fit:cover;border-radius:50%;border:3px solid #a78bfa;box-shadow:0 0 22px #a855f766}
+.club-frame-preview{height:110px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;margin:12px auto;padding:10px;border:3px solid var(--avatar-frame-accent,#c49aff);border-radius:16px;box-shadow:inset 0 0 0 3px var(--avatar-frame-secondary,#241333),0 0 18px var(--avatar-frame-accent,#c49aff);color:var(--avatar-frame-accent,#c49aff);max-width:220px}
+.club-frame-preview span{font-size:36px}
+.club-frame-preview small{font-size:9px;letter-spacing:1.4px}
+@keyframes dss-avatar-orbit{to{transform:rotate(360deg)}}
+@keyframes dss-avatar-pulse{50%{opacity:.35;filter:drop-shadow(0 0 8px var(--avatar-frame-accent,#c49aff))}}
+@media(prefers-reduced-motion:reduce){.profile-avatar.avatar-frame-orbit:before,.profile-avatar.avatar-frame-sheen:before,.profile-avatar.avatar-frame-shimmer:before{animation:none}}
