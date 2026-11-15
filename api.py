@@ -223,6 +223,10 @@ async def _migrate_legacy_columns() -> None:
         ("users", "is_banned", "INTEGER DEFAULT 0"),
         ("users", "is_unreachable", "INTEGER DEFAULT 0"),
         ("club_accounts", "orders_adjustment", "INTEGER DEFAULT 0"),
+        ("club_accounts", "referrals_adjustment", "INTEGER DEFAULT 0"),
+        ("club_task_configs", "min_level", "TEXT DEFAULT 'MEMBER'"),
+        ("club_task_configs", "secret", "INTEGER DEFAULT 0"),
+        ("club_cosmetics", "requirement_level", "TEXT DEFAULT 'MEMBER'"),
         ("club_cosmetics", "card_primary", "TEXT DEFAULT '#26133b'"),
         ("club_cosmetics", "card_secondary", "TEXT DEFAULT '#0b0812'"),
         ("club_cosmetics", "card_accent", "TEXT DEFAULT '#c49aff'"),
@@ -1055,6 +1059,18 @@ async def _club_current_level_code(session, user_id: int) -> str:
     return current
 
 
+async def _club_level_order(session) -> dict[str, int]:
+    config = await _club_config(session)
+    return {str(level.get("code", "MEMBER")).upper(): index
+            for index, level in enumerate(config.get("levels", CLUB_LEVELS))}
+
+
+async def _club_user_level_index(session, user_id: int) -> int:
+    current = await _club_current_level_code(session, user_id)
+    order = await _club_level_order(session)
+    return order.get(current, 0)
+
+
 async def _send_monthly_coupon_notice(user_id: int, code: str, discount: int, min_order: int, expires_at: datetime) -> bool:
     expires_text = _promo_datetime_to_local(expires_at) or "конца месяца"
     message = (f"💜 Твоя ежемесячная привилегия DSS CLUB\n\n"
@@ -1247,6 +1263,9 @@ async def _sync_club_tasks(session, user_id: int) -> list[str]:
     now = datetime.utcnow()
     messages = []
     tasks = (await session.execute(select(ClubTaskConfig).where(ClubTaskConfig.active.is_(True)))).scalars().all()
+    level_order = await _club_level_order(session)
+    user_level = await _club_user_level_index(session, user_id)
+    tasks = [task for task in tasks if level_order.get(str(task.min_level or "MEMBER").upper(), 0) <= user_level]
     for task in tasks:
         start, period_key = _club_period(task, now)
         count = await _club_task_count(session, user_id, task, start)
@@ -1410,6 +1429,9 @@ async def club_activities(user: dict = Depends(current_user)):
         selected = await session.get(ClubTitleSelection, uid)
         unlocked = set((await session.execute(select(ClubAchievementUnlock.achievement_key).where(ClubAchievementUnlock.user_id == uid))).scalars().all())
         tasks = (await session.execute(select(ClubTaskConfig).where(ClubTaskConfig.active.is_(True)))).scalars().all()
+        level_order = await _club_level_order(session)
+        user_level = await _club_user_level_index(session, uid)
+        tasks = [task for task in tasks if level_order.get(str(task.min_level or "MEMBER").upper(), 0) <= user_level]
         task_data = []
         for task in tasks:
             start, _period_key = _club_period(task, datetime.utcnow())
@@ -1420,24 +1442,32 @@ async def club_activities(user: dict = Depends(current_user)):
         metrics = await _club_metrics(session, uid)
         account = await session.get(ClubAccount, uid)
         lifetime = int(account.lifetime_earned or 0) if account else 0
-        card_items = (await session.execute(select(ClubCosmetic).where(
-            ClubCosmetic.kind == "card", ClubCosmetic.active.is_(True)
+        active_cosmetics = (await session.execute(select(ClubCosmetic).where(
+            ClubCosmetic.active.is_(True)
         ))).scalars().all()
-        for card in card_items:
-            req_type = card.requirement_type or "none"
-            req_value = int(card.requirement_value or 0)
-            metric_value = {"orders": metrics["orders"], "lifetime_dcp": lifetime, "referrals": metrics["referrals"]}.get(req_type, req_value)
-            if req_type == "none" or metric_value >= req_value:
-                owned_card = (await session.execute(select(ClubUserCosmetic.id).where(
-                    ClubUserCosmetic.user_id == uid, ClubUserCosmetic.cosmetic_key == card.key
-                ))).first()
-                if not owned_card:
-                    minted = await session.execute(update(ClubCosmetic).where(
-                        ClubCosmetic.key == card.key,
-                        ((ClubCosmetic.max_supply == 0) | (ClubCosmetic.issued_count < ClubCosmetic.max_supply))
-                    ).values(issued_count=ClubCosmetic.issued_count + 1))
-                    if minted.rowcount:
-                        session.add(ClubUserCosmetic(user_id=uid, cosmetic_key=card.key, granted_by=None))
+        level_order = await _club_level_order(session)
+        user_level = await _club_user_level_index(session, uid)
+        for cosmetic in active_cosmetics:
+            required_level = str(cosmetic.requirement_level or "MEMBER").upper()
+            if level_order.get(required_level, 0) > user_level:
+                continue
+            req_type = cosmetic.requirement_type or "none"
+            req_value = int(cosmetic.requirement_value or 0)
+            metric_value = {"orders": metrics["orders"], "lifetime_dcp": lifetime,
+                            "referrals": metrics["referrals"]}.get(req_type, req_value)
+            if req_type != "none" and metric_value < req_value:
+                continue
+            owned = (await session.execute(select(ClubUserCosmetic.id).where(
+                ClubUserCosmetic.user_id == uid, ClubUserCosmetic.cosmetic_key == cosmetic.key
+            ))).first()
+            if owned:
+                continue
+            minted = await session.execute(update(ClubCosmetic).where(
+                ClubCosmetic.key == cosmetic.key,
+                ((ClubCosmetic.max_supply == 0) | (ClubCosmetic.issued_count < ClubCosmetic.max_supply))
+            ).values(issued_count=ClubCosmetic.issued_count + 1))
+            if minted.rowcount:
+                session.add(ClubUserCosmetic(user_id=uid, cosmetic_key=cosmetic.key, granted_by=None))
         await session.flush()
         cosmetics = (await session.execute(
             select(ClubCosmetic)
@@ -1538,7 +1568,7 @@ async def admin_club_tasks(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         await _ensure_club_tasks(session)
         rows = (await session.execute(select(ClubTaskConfig).order_by(ClubTaskConfig.period, ClubTaskConfig.key))).scalars().all()
-        result = [{"key": t.key, "title": t.title, "description": t.description, "period": t.period, "event_type": t.event_type, "target": int(t.target), "reward": int(t.reward), "active": bool(t.active)} for t in rows]
+        result = [{"key": t.key, "title": t.title, "description": t.description, "period": t.period, "event_type": t.event_type, "target": int(t.target), "reward": int(t.reward), "active": bool(t.active), "min_level": str(t.min_level or "MEMBER"), "secret": bool(t.secret)} for t in rows]
         await session.commit()
         return result
 
@@ -1576,6 +1606,14 @@ async def admin_club_task_update(task_key: str, data: dict, user: dict = Depends
             task.target = target
         if "active" in data:
             task.active = bool(data["active"])
+        if "min_level" in data:
+            allowed_levels = await _club_level_order(session)
+            min_level = str(data["min_level"]).upper()
+            if min_level not in allowed_levels:
+                raise HTTPException(400, "Укажи существующий ранг DSS CLUB.")
+            task.min_level = min_level
+        if "secret" in data:
+            task.secret = bool(data["secret"])
         await session.commit()
         return {"ok": True}
 
@@ -1600,9 +1638,14 @@ async def admin_club_task_create(data: dict, user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         if await session.get(ClubTaskConfig, key):
             raise HTTPException(409, "Задание с таким ключом уже существует.")
+        allowed_levels = await _club_level_order(session)
+        min_level = str(data.get("min_level", "MEMBER")).upper()
+        if min_level not in allowed_levels:
+            raise HTTPException(400, "Укажи существующий ранг DSS CLUB.")
         session.add(ClubTaskConfig(key=key, title=title, description=description[:256],
             period=period, event_type=event_type, target=target, reward=reward,
-            active=bool(data.get("active", True))))
+            active=bool(data.get("active", True)), min_level=min_level,
+            secret=bool(data.get("secret", False))))
         await session.commit()
     return {"ok": True, "key": key}
 
@@ -1841,7 +1884,7 @@ async def admin_club_cosmetics(user: dict = Depends(admin_user)):
                  "card_primary": x.card_primary, "card_secondary": x.card_secondary, "card_accent": x.card_accent,
                  "card_ornament": x.card_ornament, "card_text": x.card_text,
                  "card_animation": x.card_animation, "requirement_type": x.requirement_type,
-                 "requirement_value": int(x.requirement_value or 0), "card_font": x.card_font,
+                 "requirement_value": int(x.requirement_value or 0), "requirement_level": str(x.requirement_level or "MEMBER"), "card_font": x.card_font,
                  "max_supply": int(x.max_supply or 0), "issued_count": int(x.issued_count or 0)} for x in rows]
 
 
@@ -1879,6 +1922,7 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
             card_text=valid_hex(data.get("card_text"), "#f8f5ff"),
             card_animation=animation, requirement_type=requirement_type,
             requirement_value=max(0, min(100000000, int(data.get("requirement_value", 0)))),
+            requirement_level=str(data.get("requirement_level", "MEMBER")).upper(),
             card_font=card_font, max_supply=max(0, min(100000, int(data.get("max_supply", 0)))), issued_count=0))
         await session.commit()
     return {"ok": True, "key": key}
@@ -2517,6 +2561,32 @@ async def admin_adjust_club_orders(user_id: int, data: dict, user: dict = Depend
         account.orders_adjustment = next_adjustment
         await session.commit()
     return {"ok": True, "orders_count": actual + next_adjustment, "orders_adjustment": next_adjustment}
+
+
+@app.post("/api/admin/users/{user_id}/referrals-adjustment")
+async def admin_adjust_club_referrals(user_id: int, data: dict, user: dict = Depends(admin_user)):
+    delta = int(data.get("amount", 0))
+    if not delta or abs(delta) > 100000:
+        raise HTTPException(400, "Укажи изменение количества клубных рефералов от -100000 до 100000, кроме нуля.")
+    async with SessionLocal() as session:
+        if not await session.get(User, user_id):
+            raise HTTPException(404, "Пользователь не найден.")
+        account = await session.get(ClubAccount, user_id)
+        if account is None:
+            account = ClubAccount(user_id=user_id, balance=0, lifetime_earned=0,
+                                  orders_adjustment=0, referrals_adjustment=0)
+            session.add(account)
+            await session.flush()
+        actual = int((await session.execute(select(func.count(User.id)).where(
+            User.referrer_id == user_id, User.first_purchase_done.is_(True)
+        ))).scalar() or 0)
+        next_adjustment = int(account.referrals_adjustment or 0) + delta
+        if actual + next_adjustment < 0:
+            raise HTTPException(409, "Итоговое количество клубных рефералов не может быть меньше нуля.")
+        account.referrals_adjustment = next_adjustment
+        await session.commit()
+    return {"ok": True, "referrals_count": actual + next_adjustment,
+            "referrals_adjustment": next_adjustment}
 
 
 @app.post("/api/admin/users/{user_id}/ban")
