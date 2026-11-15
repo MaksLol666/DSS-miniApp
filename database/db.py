@@ -21,6 +21,28 @@ async def init_db() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
         if DB_URL.startswith("sqlite"):
+            migrations = {
+                "products": {
+                    "public_release_at": "DATETIME",
+                    "rank_release_dates": "TEXT NOT NULL DEFAULT '{}'",
+                },
+                "club_accounts": {
+                    "referrals_adjustment": "INTEGER NOT NULL DEFAULT 0",
+                },
+                "club_task_configs": {
+                    "min_level": "VARCHAR(16) NOT NULL DEFAULT 'MEMBER'",
+                    "secret": "INTEGER NOT NULL DEFAULT 0",
+                },
+                "club_cosmetics": {
+                    "requirement_level": "VARCHAR(16) NOT NULL DEFAULT 'MEMBER'",
+                },
+            }
+            for table, columns_to_add in migrations.items():
+                result = await connection.exec_driver_sql(f"PRAGMA table_info({table})")
+                existing_columns = {row[1] for row in result.fetchall()}
+                for column, sql_type in columns_to_add.items():
+                    if column not in existing_columns:
+                        await connection.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
             result = await connection.exec_driver_sql("PRAGMA table_info(products)")
             columns = {row[1] for row in result.fetchall()}
             if "stock_qty" not in columns:
