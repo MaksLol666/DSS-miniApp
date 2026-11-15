@@ -877,6 +877,7 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         if not rows:
             raise HTTPException(400, "Корзина пуста.")
         for cart_item, p in rows:
+            await _ensure_product_released(session, p, user["id"])
             requested = int(cart_item.quantity or 1)
             if not p.in_stock or int(p.stock_qty or 0) < requested:
                 raise HTTPException(409, f"Для товара {p.brand} — {p.flavor} доступно {int(p.stock_qty or 0)} шт., в корзине {requested}.")
@@ -1970,6 +1971,10 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
         allowed_fonts = ("orbitron", "rajdhani", "exo2", "montserrat", "georgia", "mono")
         if requirement_type not in ("none", "orders", "lifetime_dcp", "referrals") or animation not in allowed_animations or card_font not in allowed_fonts:
             raise HTTPException(400, "Некорректное условие, анимация или шрифт карточки.")
+        allowed_levels = await _club_level_order(session)
+        requirement_level = str(data.get("requirement_level", "MEMBER")).upper()
+        if requirement_level not in allowed_levels:
+            raise HTTPException(400, "Укажи существующий ранг DSS CLUB.")
         def valid_hex(value, fallback):
             value = str(value or fallback).strip()
             if value.lower() == "rainbow":
@@ -1987,7 +1992,7 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
             card_text=valid_hex(data.get("card_text"), "#f8f5ff"),
             card_animation=animation, requirement_type=requirement_type,
             requirement_value=max(0, min(100000000, int(data.get("requirement_value", 0)))),
-            requirement_level=str(data.get("requirement_level", "MEMBER")).upper(),
+            requirement_level=requirement_level,
             card_font=card_font, max_supply=max(0, min(100000, int(data.get("max_supply", 0)))), issued_count=0))
         await session.commit()
     return {"ok": True, "key": key}
@@ -2038,6 +2043,12 @@ async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict =
             item.requirement_type = data["requirement_type"]
         if "requirement_value" in data:
             item.requirement_value = max(0, min(100000000, int(data["requirement_value"])))
+        if "requirement_level" in data:
+            allowed_levels = await _club_level_order(session)
+            requirement_level = str(data["requirement_level"]).upper()
+            if requirement_level not in allowed_levels:
+                raise HTTPException(400, "Укажи существующий ранг DSS CLUB.")
+            item.requirement_level = requirement_level
         await session.commit()
     return {"ok": True}
 
