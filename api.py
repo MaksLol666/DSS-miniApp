@@ -1497,13 +1497,24 @@ async def club_activities(user: dict = Depends(current_user)):
         tasks = (await session.execute(select(ClubTaskConfig).where(ClubTaskConfig.active.is_(True)))).scalars().all()
         level_order = await _club_level_order(session)
         user_level = await _club_user_level_index(session, uid)
-        tasks = [task for task in tasks if level_order.get(str(task.min_level or "MEMBER").upper(), 0) <= user_level]
+        level_titles = {str(item.get("code", "MEMBER")).upper(): str(item.get("title", item.get("code", "MEMBER")))
+                        for item in (await _club_config(session)).get("levels", CLUB_LEVELS)}
         task_data = []
         for task in tasks:
-            start, _period_key = _club_period(task, datetime.utcnow())
-            count = await _club_task_count(session, uid, task, start)
+            required_level = str(task.min_level or "MEMBER").upper()
+            unlocked = level_order.get(required_level, 0) <= user_level
+            # Secret tasks are not disclosed until the user reaches their required rank.
+            if not unlocked and bool(task.secret):
+                continue
+            if unlocked:
+                start, _period_key = _club_period(task, datetime.utcnow())
+                count = await _club_task_count(session, uid, task, start)
+            else:
+                count = 0
             task_data.append({"key": task.key, "title": task.title, "description": task.description, "period": task.period,
-                "target": int(task.target), "reward": int(task.reward), "progress": min(count, int(task.target)), "completed": count >= int(task.target)})
+                "target": int(task.target), "reward": int(task.reward) if unlocked else 0,
+                "progress": min(count, int(task.target)), "completed": unlocked and count >= int(task.target),
+                "unlocked": unlocked, "required_level": level_titles.get(required_level, required_level)})
         config = await _club_config(session)
         metrics = await _club_metrics(session, uid)
         account = await session.get(ClubAccount, uid)
