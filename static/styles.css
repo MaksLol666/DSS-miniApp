@@ -409,3 +409,5 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 
 .profile-avatar-glyph{display:grid;place-items:center;width:100%;height:100%;border-radius:50%;font-size:31px;line-height:1;background:radial-gradient(circle at 30% 25%,#49346a,#15101f 72%);text-shadow:0 0 14px var(--avatar-frame-accent,#c49aff)}
 .profile-avatar.avatar-frame-pulse:before{animation:dss-avatar-pulse 2.8s ease-in-out infinite}
+
+.club-avatar-glyph-preview{width:104px;height:104px;display:grid;place-items:center;border-radius:50%;border:3px solid #a78bfa;background:radial-gradient(circle at 30% 25%,#49346a,#15101f 72%);font-size:44px;box-shadow:0 0 22px #a855f766}
