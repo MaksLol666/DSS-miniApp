@@ -1485,11 +1485,27 @@ async def _sync_club_activity(session, user_id: int) -> list[str]:
     return messages
 
 
+async def _ensure_default_club_cosmetics(session):
+    defaults = [
+        {"key": "starter_avatar_smoke", "kind": "avatar", "title": "Smoke", "icon": "🌫️", "rarity": "common", "description": "Стартовая клубная аватарка"},
+        {"key": "starter_avatar_ghost", "kind": "avatar", "title": "Ghost", "icon": "👻", "rarity": "common", "description": "Стартовая клубная аватарка"},
+        {"key": "starter_avatar_flame", "kind": "avatar", "title": "Flame", "icon": "🔥", "rarity": "rare", "description": "Стартовая клубная аватарка"},
+        {"key": "starter_frame_violet", "kind": "frame", "title": "Violet Ring", "icon": "✦", "rarity": "common", "description": "Фиолетовая неоновая рамка", "card_accent": "#a78bfa", "card_primary": "#241333"},
+        {"key": "starter_frame_crimson", "kind": "frame", "title": "Crimson Halo", "icon": "⬡", "rarity": "rare", "description": "Алый ореол", "card_accent": "#fb7185", "card_primary": "#2a1118", "card_animation": "orbit"},
+        {"key": "starter_frame_ice", "kind": "frame", "title": "Ice Pulse", "icon": "❄️", "rarity": "rare", "description": "Холодное голубое свечение", "card_accent": "#67e8f9", "card_primary": "#0b2630", "card_animation": "sheen"},
+    ]
+    for item in defaults:
+        if await session.get(ClubCosmetic, item["key"]) is None:
+            session.add(ClubCosmetic(**item))
+    await session.flush()
+
+
 @app.get("/api/club/activities")
 async def club_activities(user: dict = Depends(current_user)):
     uid = user["id"]
     async with SessionLocal() as session:
         await _ensure_club_tasks(session)
+        await _ensure_default_club_cosmetics(session)
         await _sync_club_achievements(session, uid)
         await _sync_club_tasks(session, uid)
         selected = await session.get(ClubTitleSelection, uid)
@@ -1996,8 +2012,6 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
         image_url = str(data.get("image_url", "")).strip()
         if image_url and (len(image_url) > 512 or not re.match(r"^https://", image_url, re.IGNORECASE)):
             raise HTTPException(400, "Ссылка на изображение должна начинаться с https:// и быть не длиннее 512 символов.")
-        if kind == "avatar" and not image_url:
-            raise HTTPException(400, "Для аватарки обязательно укажи HTTPS-ссылку на изображение.")
         session.add(ClubCosmetic(key=key, kind=kind, title=title[:96],
             description=str(data.get("description", ""))[:256], icon=str(data.get("icon", "✦"))[:16], image_url=image_url,
             rarity=str(data.get("rarity", "common"))[:16], active=bool(data.get("active", True)),
@@ -2031,8 +2045,6 @@ async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict =
             image_url = str(data["image_url"] or "").strip()
             if image_url and (len(image_url) > 512 or not re.match(r"^https://", image_url, re.IGNORECASE)):
                 raise HTTPException(400, "Ссылка на изображение должна начинаться с https:// и быть не длиннее 512 символов.")
-            if item.kind == "avatar" and not image_url:
-                raise HTTPException(400, "Для аватарки обязательно укажи HTTPS-ссылку на изображение.")
             item.image_url = image_url
         if "icon" in data:
             item.icon = str(data["icon"])[:16]
