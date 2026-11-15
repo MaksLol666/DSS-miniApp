@@ -2099,18 +2099,37 @@ async def my_promos(user: dict = Depends(current_user)):
                  "expires_at": _promo_datetime_to_local(p.expires_at)} for p in rows]
 
 
+async def _public_club_cosmetics(session, user_ids: list[int]) -> dict[int, dict]:
+    if not user_ids:
+        return {}
+    rows = (await session.execute(
+        select(ClubCosmeticLoadout.user_id, ClubCosmetic.kind, ClubCosmetic.key, ClubCosmetic.title, ClubCosmetic.icon)
+        .join(ClubCosmetic, ClubCosmetic.key == ClubCosmeticLoadout.cosmetic_key)
+        .where(ClubCosmeticLoadout.user_id.in_(user_ids), ClubCosmetic.active.is_(True),
+               ClubCosmetic.kind.in_(("frame", "effect", "badge")))
+    )).all()
+    result: dict[int, dict] = {}
+    for row in rows:
+        result.setdefault(int(row.user_id), {})[row.kind] = {"key": row.key, "title": row.title, "icon": row.icon}
+    return result
+
+
 @app.get("/api/top")
 async def top_buyers(user: dict = Depends(current_user)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(User).where(User.balance > 0).order_by(User.balance.desc()).limit(10))).scalars().all()
-        return [{"username": u.username, "user_id": u.id, "value": float(u.balance or 0)} for u in rows]
+        cosmetics = await _public_club_cosmetics(session, [u.id for u in rows])
+        return [{"username": u.username, "user_id": u.id, "value": float(u.balance or 0),
+                 "club_cosmetics": cosmetics.get(u.id, {})} for u in rows]
 
 
 @app.get("/api/topref")
 async def top_referrers(user: dict = Depends(current_user)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(User).where(User.referrals_count > 0).order_by(User.referrals_count.desc()).limit(10))).scalars().all()
-        return [{"username": u.username, "user_id": u.id, "value": int(u.referrals_count or 0)} for u in rows]
+        cosmetics = await _public_club_cosmetics(session, [u.id for u in rows])
+        return [{"username": u.username, "user_id": u.id, "value": int(u.referrals_count or 0),
+                 "club_cosmetics": cosmetics.get(u.id, {})} for u in rows]
 
 
 @app.post("/api/review")
