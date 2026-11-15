@@ -1561,7 +1561,7 @@ async def club_activities(user: dict = Depends(current_user)):
                     for item in config.get("achievements", CLUB_ACHIEVEMENTS) if item.get("active", True)],
                 "tasks": task_data, "selected_title": selected.title_key if selected else None,
                 "cosmetics": [{"key": c.key, "kind": c.kind, "title": c.title, "description": c.description,
-                    "icon": c.icon, "rarity": c.rarity, "equipped": equipped_by_kind.get(c.kind) == c.key,
+                    "icon": c.icon, "image_url": c.image_url, "rarity": c.rarity, "equipped": equipped_by_kind.get(c.kind) == c.key,
                     "card_primary": c.card_primary, "card_secondary": c.card_secondary, "card_accent": c.card_accent,
                     "card_ornament": c.card_ornament, "card_text": c.card_text,
                     "card_animation": c.card_animation, "requirement_type": c.requirement_type,
@@ -1602,7 +1602,7 @@ async def club_equip_cosmetic(data: dict, user: dict = Depends(current_user)):
     key = str(data.get("key", "")).strip()
     if not key:
         kind = str(data.get("kind", "card"))
-        if kind not in ("card", "badge", "frame", "effect", "title"):
+        if kind not in ("card", "badge", "frame", "effect", "title", "avatar"):
             raise HTTPException(400, "Неизвестный тип косметики.")
         async with SessionLocal() as session:
             await session.execute(delete(ClubCosmeticLoadout).where(
@@ -1957,7 +1957,7 @@ async def admin_club_cosmetics(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         rows = (await session.execute(select(ClubCosmetic).order_by(ClubCosmetic.kind, ClubCosmetic.key))).scalars().all()
         return [{"key": x.key, "kind": x.kind, "title": x.title, "description": x.description,
-                 "icon": x.icon, "rarity": x.rarity, "active": bool(x.active),
+                 "icon": x.icon, "image_url": x.image_url, "rarity": x.rarity, "active": bool(x.active),
                  "card_primary": x.card_primary, "card_secondary": x.card_secondary, "card_accent": x.card_accent,
                  "card_ornament": x.card_ornament, "card_text": x.card_text,
                  "card_animation": x.card_animation, "requirement_type": x.requirement_type,
@@ -1970,7 +1970,7 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
     key = re.sub(r"[^a-z0-9_]", "_", str(data.get("key", "")).lower()).strip("_")
     kind = str(data.get("kind", "badge"))
     title = str(data.get("title", "")).strip()
-    if not key or len(key) > 48 or not title or kind not in ("title", "badge", "frame", "effect", "card"):
+    if not key or len(key) > 48 or not title or kind not in ("title", "badge", "frame", "effect", "card", "avatar"):
         raise HTTPException(400, "Укажи ключ, название и корректный тип косметики.")
     async with SessionLocal() as session:
         if await session.get(ClubCosmetic, key):
@@ -1993,8 +1993,13 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
             if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
                 raise HTTPException(400, "Цвет карточки должен быть #RRGGBB или rainbow.")
             return value
+        image_url = str(data.get("image_url", "")).strip()
+        if image_url and (len(image_url) > 512 or not re.match(r"^https://", image_url, re.IGNORECASE)):
+            raise HTTPException(400, "Ссылка на изображение должна начинаться с https:// и быть не длиннее 512 символов.")
+        if kind == "avatar" and not image_url:
+            raise HTTPException(400, "Для аватарки обязательно укажи HTTPS-ссылку на изображение.")
         session.add(ClubCosmetic(key=key, kind=kind, title=title[:96],
-            description=str(data.get("description", ""))[:256], icon=str(data.get("icon", "✦"))[:16],
+            description=str(data.get("description", ""))[:256], icon=str(data.get("icon", "✦"))[:16], image_url=image_url,
             rarity=str(data.get("rarity", "common"))[:16], active=bool(data.get("active", True)),
             card_primary=valid_hex(data.get("card_primary"), "#26133b"),
             card_secondary=valid_hex(data.get("card_secondary"), "#0b0812"),
@@ -2022,6 +2027,13 @@ async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict =
             item.title = title
         if "description" in data:
             item.description = str(data["description"])[:256]
+        if "image_url" in data:
+            image_url = str(data["image_url"] or "").strip()
+            if image_url and (len(image_url) > 512 or not re.match(r"^https://", image_url, re.IGNORECASE)):
+                raise HTTPException(400, "Ссылка на изображение должна начинаться с https:// и быть не длиннее 512 символов.")
+            if item.kind == "avatar" and not image_url:
+                raise HTTPException(400, "Для аватарки обязательно укажи HTTPS-ссылку на изображение.")
+            item.image_url = image_url
         if "icon" in data:
             item.icon = str(data["icon"])[:16]
         if "rarity" in data:
@@ -2234,14 +2246,14 @@ async def _public_club_cosmetics(session, user_ids: list[int]) -> dict[int, dict
     if not user_ids:
         return {}
     rows = (await session.execute(
-        select(ClubCosmeticLoadout.user_id, ClubCosmetic.kind, ClubCosmetic.key, ClubCosmetic.title, ClubCosmetic.icon)
+        select(ClubCosmeticLoadout.user_id, ClubCosmetic.kind, ClubCosmetic.key, ClubCosmetic.title, ClubCosmetic.icon, ClubCosmetic.image_url, ClubCosmetic.card_accent)
         .join(ClubCosmetic, ClubCosmetic.key == ClubCosmeticLoadout.cosmetic_key)
         .where(ClubCosmeticLoadout.user_id.in_(user_ids), ClubCosmetic.active.is_(True),
-               ClubCosmetic.kind.in_(("frame", "effect", "badge")))
+               ClubCosmetic.kind.in_(("frame", "effect", "badge", "avatar")))
     )).all()
     result: dict[int, dict] = {}
     for row in rows:
-        result.setdefault(int(row.user_id), {})[row.kind] = {"key": row.key, "title": row.title, "icon": row.icon}
+        result.setdefault(int(row.user_id), {})[row.kind] = {"key": row.key, "title": row.title, "icon": row.icon, "image_url": row.image_url, "card_accent": row.card_accent}
     return result
 
 
