@@ -41,6 +41,8 @@ class Product(Base):
     in_stock: Mapped[bool] = mapped_column(Boolean, default=True)
     stock_qty: Mapped[int] = mapped_column(Integer, default=1)
     image_urls: Mapped[str] = mapped_column(String(4096), default="[]")
+    public_release_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    rank_release_dates: Mapped[str] = mapped_column(Text, default="{}")
 
     @property
     def images(self) -> list[str]:
@@ -148,6 +150,7 @@ class ClubAccount(Base):
     balance: Mapped[int] = mapped_column(Integer, default=0)
     lifetime_earned: Mapped[int] = mapped_column(Integer, default=0)
     orders_adjustment: Mapped[int] = mapped_column(Integer, default=0)
+    referrals_adjustment: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -183,6 +186,8 @@ class ClubTaskConfig(Base):
     target: Mapped[int] = mapped_column(Integer, default=1)
     reward: Mapped[int] = mapped_column(Integer, default=30)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    min_level: Mapped[str] = mapped_column(String(16), default="MEMBER")
+    secret: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class ClubTaskProgress(Base):
@@ -272,6 +277,7 @@ class ClubCosmetic(Base):
     card_animation: Mapped[str] = mapped_column(String(16), default="pulse")
     requirement_type: Mapped[str] = mapped_column(String(24), default="none")
     requirement_value: Mapped[int] = mapped_column(Integer, default=0)
+    requirement_level: Mapped[str] = mapped_column(String(16), default="MEMBER")
     card_font: Mapped[str] = mapped_column(String(24), default="orbitron")
     max_supply: Mapped[int] = mapped_column(Integer, default=0)
     issued_count: Mapped[int] = mapped_column(Integer, default=0)
