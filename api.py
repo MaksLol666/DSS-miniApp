@@ -1490,10 +1490,17 @@ async def _ensure_season(session, now: datetime | None = None):
     first_end = first_start + timedelta(days=season_length)
     first = await session.get(ClubSeason, 1)
     if first is None:
-        first = ClubSeason(season_number=1, title=str(season_config.get("title", "Season 01 · Новый год"))[:96],
-                           starts_at=first_start, ends_at=first_end)
-        session.add(first)
-        await session.flush()
+        try:
+            async with session.begin_nested():
+                session.add(ClubSeason(season_number=1, title=str(season_config.get("title", "Season 01 · Новый год"))[:96],
+                                       starts_at=first_start, ends_at=first_end))
+                await session.flush()
+        except IntegrityError:
+            # A parallel request initialized season 1 first.
+            pass
+        first = await session.get(ClubSeason, 1)
+        if first is None:
+            raise RuntimeError("Не удалось инициализировать первый сезон DSS CLUB.")
     else:
         # Once a season record exists, its persisted start/end dates are authoritative.
         # This prevents later settings edits from unexpectedly resetting the season index.
@@ -1507,10 +1514,17 @@ async def _ensure_season(session, now: datetime | None = None):
         current = await session.get(ClubSeason, number)
         if current is None:
             starts_at = first_start + timedelta(days=season_length * (number - 1))
-            current = ClubSeason(season_number=number, title=f"{str(season_config.get('title_prefix', 'Season'))[:40]} {number:02d}",
-                                 starts_at=starts_at, ends_at=starts_at + timedelta(days=season_length))
-            session.add(current)
-            await session.flush()
+            try:
+                async with session.begin_nested():
+                    session.add(ClubSeason(season_number=number, title=f"{str(season_config.get('title_prefix', 'Season'))[:40]} {number:02d}",
+                                           starts_at=starts_at, ends_at=starts_at + timedelta(days=season_length)))
+                    await session.flush()
+            except IntegrityError:
+                # Another request created this season concurrently.
+                pass
+            current = await session.get(ClubSeason, number)
+            if current is None:
+                raise RuntimeError(f"Не удалось создать сезон DSS CLUB №{number}.")
     return current, current.starts_at <= now < current.ends_at
 
 
