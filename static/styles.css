@@ -478,3 +478,105 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 .season-rank-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .season-rank-user .season-rank-number{flex:0 0 25px}
 @media(prefers-reduced-motion:reduce){.dss-card-ambassador .dss-card-level,.dss-card-ambassador .dss-card-progress>div,.profile-avatar.avatar-frame-rainbow{animation:none!important}}
+
+
+/* DSS CLUB — AMBASSADOR full-page prismatic interface.
+   Scoped to the currently displayed AMBASSADOR membership card; other ranks stay untouched. */
+.shell:has(.dss-card-ambassador) .club-monthly-perk,
+.shell:has(.dss-card-ambassador) .club-title-card,
+.shell:has(.dss-card-ambassador) .season-panel{
+  border-color:transparent;
+  background:
+    linear-gradient(#15121d,#15121d) padding-box,
+    linear-gradient(115deg,#ff638d,#ffc46b,#fff18b,#63eab2,#68caff,#ad8aff,#ff72c9) border-box;
+  box-shadow:0 0 16px rgba(184,120,255,.16),0 12px 34px rgba(0,0,0,.32);
+  position:relative;
+}
+.shell:has(.dss-card-ambassador) .club-monthly-perk:before,
+.shell:has(.dss-card-ambassador) .club-title-card:before,
+.shell:has(.dss-card-ambassador) .season-panel:before{
+  background-image:
+    linear-gradient(115deg,rgba(255,99,141,.10),rgba(255,196,107,.08),rgba(99,234,178,.08),rgba(104,202,255,.10),rgba(173,138,255,.10),rgba(255,114,201,.10));
+}
+.shell:has(.dss-card-ambassador) .club-title-art{
+  border-color:rgba(255,255,255,.42);
+  background:
+    linear-gradient(145deg,rgba(255,99,141,.17),rgba(255,196,107,.14),rgba(99,234,178,.13),rgba(104,202,255,.16),rgba(173,138,255,.18)),
+    #17121f;
+  box-shadow:inset 0 0 22px rgba(190,140,255,.22),0 0 18px rgba(111,190,255,.15);
+}
+.shell:has(.dss-card-ambassador) .club-title-art span,
+.shell:has(.dss-card-ambassador) .club-title-info>b,
+.shell:has(.dss-card-ambassador) .club-perk-heading,
+.shell:has(.dss-card-ambassador) .club-monthly-perk .eyebrow,
+.shell:has(.dss-card-ambassador) .season-edition,
+.shell:has(.dss-card-ambassador) .season-status,
+.shell:has(.dss-card-ambassador) .season-score-token{
+  background:linear-gradient(90deg,#ff638d,#ffc46b,#fff18b,#63eab2,#68caff,#ad8aff,#ff72c9);
+  background-size:220% 100%;
+  background-clip:text;
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  animation:ambassador-spectrum 8s linear infinite;
+  filter:drop-shadow(0 0 8px rgba(177,137,255,.3));
+}
+.shell:has(.dss-card-ambassador) .club-title-art span{
+  background:linear-gradient(135deg,#ff638d,#ffc46b,#fff18b,#63eab2,#68caff,#ad8aff,#ff72c9);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+.shell:has(.dss-card-ambassador) .club-perk span,
+.shell:has(.dss-card-ambassador) .club-monthly-gem{
+  color:#e5c8ff;
+  text-shadow:0 0 9px rgba(255,99,200,.7),0 0 16px rgba(104,202,255,.45);
+}
+.shell:has(.dss-card-ambassador) .season-title,
+.shell:has(.dss-card-ambassador) .season-score span,
+.shell:has(.dss-card-ambassador) .season-subtitle{
+  color:#f3e4ff;
+  text-shadow:0 0 12px rgba(177,137,255,.32);
+}
+.shell:has(.dss-card-ambassador) .season-score strong{
+  background:linear-gradient(90deg,#ff8aa9,#ffd58a,#b6f6d5,#9cddff,#d0b4ff);
+  background-clip:text;
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+.shell:has(.dss-card-ambassador) .season-divider{
+  background:linear-gradient(90deg,#ff638d,#ffc46b,#63eab2,#68caff,#ad8aff,#ff72c9);
+  opacity:.65;
+}
+.shell:has(.dss-card-ambassador) .season-reward.is-unlocked{
+  border-color:rgba(193,158,255,.8);
+  background:linear-gradient(135deg,rgba(255,99,141,.12),rgba(99,234,178,.08),rgba(104,202,255,.12),rgba(173,138,255,.13)),#1a1622;
+  box-shadow:0 0 14px rgba(177,137,255,.16);
+}
+.shell:has(.dss-card-ambassador) .season-reward b,
+.shell:has(.dss-card-ambassador) .season-rank-number{
+  color:#e8d3ff;
+  text-shadow:0 0 9px rgba(177,137,255,.4);
+}
+.shell:has(.dss-card-ambassador) .club-level-ambassador .club-level-emblem{
+  color:#fff;
+  border-color:transparent;
+  background:linear-gradient(135deg,#ff638d,#ffc46b,#fff18b,#63eab2,#68caff,#ad8aff,#ff72c9);
+  box-shadow:0 0 16px rgba(177,137,255,.42),inset 0 0 12px rgba(255,255,255,.25);
+}
+.shell:has(.dss-card-ambassador) .club-level-ambassador.is-unlocked{
+  border-color:rgba(190,150,255,.9);
+  background:linear-gradient(135deg,rgba(255,99,141,.12),rgba(255,196,107,.08),rgba(99,234,178,.08),rgba(104,202,255,.10),rgba(173,138,255,.12)),#17141f;
+  box-shadow:0 0 18px rgba(177,137,255,.2);
+}
+.shell:has(.dss-card-ambassador) .club-level-ambassador .club-level-title{
+  color:#f4eaff;
+  text-shadow:0 0 10px rgba(177,137,255,.34);
+}
+@media(prefers-reduced-motion:reduce){
+  .shell:has(.dss-card-ambassador) .club-title-art span,
+  .shell:has(.dss-card-ambassador) .club-title-info>b,
+  .shell:has(.dss-card-ambassador) .club-perk-heading,
+  .shell:has(.dss-card-ambassador) .club-monthly-perk .eyebrow,
+  .shell:has(.dss-card-ambassador) .season-edition,
+  .shell:has(.dss-card-ambassador) .season-status,
+  .shell:has(.dss-card-ambassador) .season-score-token{animation:none}
+}
