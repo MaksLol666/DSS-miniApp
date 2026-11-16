@@ -3181,15 +3181,28 @@ async def admin_stats(period: str = "30d", user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         total_users = (await session.execute(select(func.count(User.id)))).scalar() or 0
         pending = (await session.execute(select(func.count(Order.id)).where(Order.status.in_(("accepted", "assembling", "assembled", "in_transit"))))).scalar() or 0
-        order_query = select(Order).where(Order.status == "completed")
-        if start is not None: order_query = order_query.where(Order.created_at >= start)
-        if end is not None: order_query = order_query.where(Order.created_at < end)
+        completed_times = (
+            select(
+                OrderStatusHistory.order_id.label("order_id"),
+                func.max(OrderStatusHistory.created_at).label("completed_at"),
+            )
+            .where(OrderStatusHistory.status == "completed")
+            .group_by(OrderStatusHistory.order_id)
+            .subquery()
+        )
+        order_query = select(Order).join(completed_times, completed_times.c.order_id == Order.id)
+        if start is not None: order_query = order_query.where(completed_times.c.completed_at >= start)
+        if end is not None: order_query = order_query.where(completed_times.c.completed_at < end)
         orders_rows = (await session.execute(order_query.order_by(Order.created_at.desc()))).scalars().all()
         order_count = len(orders_rows)
         revenue = sum(max(0.0, float(o.total) - (DELIVERY_PRICE if o.delivery_type == "cdek" else 0.0)) for o in orders_rows)
-        item_query = select(OrderItem, Order).join(Order, Order.id == OrderItem.order_id).where(Order.status == "completed")
-        if start is not None: item_query = item_query.where(Order.created_at >= start)
-        if end is not None: item_query = item_query.where(Order.created_at < end)
+        item_query = (
+            select(OrderItem, Order)
+            .join(Order, Order.id == OrderItem.order_id)
+            .join(completed_times, completed_times.c.order_id == Order.id)
+        )
+        if start is not None: item_query = item_query.where(completed_times.c.completed_at >= start)
+        if end is not None: item_query = item_query.where(completed_times.c.completed_at < end)
         item_rows = (await session.execute(item_query)).all()
         cogs = 0.0
         tracked_units = untracked_units = 0
@@ -3215,8 +3228,14 @@ async def admin_stats(period: str = "30d", user: dict = Depends(admin_user)):
         top_profit_products = sorted(({"brand": p["brand"], "flavor": p["flavor"], "profit": round(p["revenue"] - p["cost"], 2), "cost_tracked": p["cost_tracked"]} for p in products.values()), key=lambda x: x["profit"], reverse=True)[:5]
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = now - timedelta(days=7)
-        day_orders = (await session.execute(select(Order).where(Order.status == "completed", Order.created_at >= day_start))).scalars().all()
-        week_orders = (await session.execute(select(Order).where(Order.status == "completed", Order.created_at >= week_start))).scalars().all()
+        day_orders = (await session.execute(
+            select(Order).join(completed_times, completed_times.c.order_id == Order.id)
+            .where(completed_times.c.completed_at >= day_start)
+        )).scalars().all()
+        week_orders = (await session.execute(
+            select(Order).join(completed_times, completed_times.c.order_id == Order.id)
+            .where(completed_times.c.completed_at >= week_start)
+        )).scalars().all()
         revenue_day = sum(max(0.0, float(o.total) - (DELIVERY_PRICE if o.delivery_type == "cdek" else 0.0)) for o in day_orders)
         revenue_week = sum(max(0.0, float(o.total) - (DELIVERY_PRICE if o.delivery_type == "cdek" else 0.0)) for o in week_orders)
     return {
