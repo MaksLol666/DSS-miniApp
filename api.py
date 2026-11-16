@@ -3115,12 +3115,26 @@ async def admin_user_reset(user_id: int, user: dict = Depends(admin_user)):
         u = await session.get(User, user_id)
         if not u:
             raise HTTPException(404, "Пользователь не найден.")
+        pending_order = (await session.execute(
+            select(Order.id).where(
+                Order.user_id == user_id,
+                Order.status.in_(("accepted", "assembling", "assembled", "in_transit")),
+            ).limit(1)
+        )).first()
+        if pending_order:
+            raise HTTPException(409, "Нельзя сбросить статистику пользователя, пока у него есть незавершённый заказ.")
         u.balance = 0
         u.referrals_count = 0
         u.next_bonus_at = REFERRAL_MILESTONE
-        u.first_purchase_done = False
-        await session.execute(delete(Promocode).where(Promocode.owner_id == user_id))
+        completed_orders = int((await session.execute(
+            select(func.count(Order.id)).where(Order.user_id == user_id, Order.status == "completed")
+        )).scalar() or 0)
+        # Keep first-purchase history when completed orders are preserved.
+        u.first_purchase_done = completed_orders > 0
+        owned_codes = select(Promocode.code).where(Promocode.owner_id == user_id)
+        await session.execute(delete(CartPromo).where(CartPromo.code.in_(owned_codes)))
         await session.execute(delete(CartPromo).where(CartPromo.user_id == user_id))
+        await session.execute(delete(Promocode).where(Promocode.owner_id == user_id))
         await session.commit()
     return {"ok": True, "history_preserved": True}
 
