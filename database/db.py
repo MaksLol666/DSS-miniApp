@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import DB_URL
@@ -52,25 +53,6 @@ async def init_db() -> None:
                 await connection.exec_driver_sql("ALTER TABLE products ADD COLUMN image_urls VARCHAR(4096) NOT NULL DEFAULT '[]'")
             if "cost_price" not in columns:
                 await connection.exec_driver_sql("ALTER TABLE products ADD COLUMN cost_price FLOAT")
-            # Merge any legacy duplicate cart rows before enforcing one row per product/user.
-            duplicate_groups = await connection.exec_driver_sql("""
-                SELECT user_id, product_id, MIN(id) AS keep_id, SUM(quantity) AS total_quantity
-                FROM cart_items
-                GROUP BY user_id, product_id
-                HAVING COUNT(*) > 1
-            """)
-            for user_id, product_id, keep_id, total_quantity in duplicate_groups.fetchall():
-                await connection.exec_driver_sql(
-                    "UPDATE cart_items SET quantity = ? WHERE id = ?",
-                    (int(total_quantity or 1), int(keep_id))
-                )
-                await connection.exec_driver_sql(
-                    "DELETE FROM cart_items WHERE user_id = ? AND product_id = ? AND id != ?",
-                    (int(user_id), int(product_id), int(keep_id))
-                )
-            await connection.exec_driver_sql(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_cart_items_user_product ON cart_items(user_id, product_id)"
-            )
             await connection.exec_driver_sql("UPDATE products SET stock_qty = CASE WHEN in_stock = 1 THEN 1 ELSE 0 END WHERE stock_qty IS NULL OR stock_qty < 0")
             for table in ("cart_items", "order_items"):
                 result = await connection.exec_driver_sql(f"PRAGMA table_info({table})")
@@ -118,3 +100,37 @@ async def init_db() -> None:
             await connection.exec_driver_sql(
                 "ALTER TABLE club_cosmetics ADD COLUMN IF NOT EXISTS image_url VARCHAR(512) NOT NULL DEFAULT ''"
             )
+            await connection.exec_driver_sql(
+                "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1"
+            )
+            await connection.exec_driver_sql(
+                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1"
+            )
+            await connection.exec_driver_sql(
+                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cost_price_snapshot FLOAT"
+            )
+            await connection.exec_driver_sql(
+                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS brand_snapshot VARCHAR(64)"
+            )
+            await connection.exec_driver_sql(
+                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS flavor_snapshot VARCHAR(64)"
+            )
+        # Merge legacy duplicate cart rows before enforcing one row per product/user.
+        duplicate_groups = await connection.execute(text("""
+            SELECT user_id, product_id, MIN(id) AS keep_id, SUM(quantity) AS total_quantity
+            FROM cart_items
+            GROUP BY user_id, product_id
+            HAVING COUNT(*) > 1
+        """))
+        for user_id, product_id, keep_id, total_quantity in duplicate_groups.fetchall():
+            await connection.execute(
+                text("UPDATE cart_items SET quantity = :quantity WHERE id = :keep_id"),
+                {"quantity": int(total_quantity or 1), "keep_id": int(keep_id)}
+            )
+            await connection.execute(
+                text("DELETE FROM cart_items WHERE user_id = :user_id AND product_id = :product_id AND id != :keep_id"),
+                {"user_id": int(user_id), "product_id": int(product_id), "keep_id": int(keep_id)}
+            )
+        await connection.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_cart_items_user_product ON cart_items(user_id, product_id)"
+        )
