@@ -1030,8 +1030,8 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
                 raise HTTPException(409, "Условия фиксированной скидки DSS CLUB изменились. Обнови корзину.")
             debit = await session.execute(
                 update(ClubAccount)
-                .where(ClubAccount.user_id == user["id"], ClubAccount.balance >= required_points)
-                .values(balance=ClubAccount.balance - required_points)
+                .where(ClubAccount.user_id == user["id"], func.coalesce(ClubAccount.balance, 0) >= required_points)
+                .values(balance=func.coalesce(ClubAccount.balance, 0) - required_points)
             )
             if debit.rowcount != 1:
                 raise HTTPException(409, "Недостаточно DCP на балансе. Обнови корзину.")
@@ -1194,8 +1194,8 @@ async def _award_club_dcp(session, user_id: int, amount: int, event_key: str, re
         update(ClubAccount)
         .where(ClubAccount.user_id == user_id)
         .values(
-            balance=ClubAccount.balance + amount,
-            lifetime_earned=ClubAccount.lifetime_earned + amount,
+            balance=func.coalesce(ClubAccount.balance, 0) + amount,
+            lifetime_earned=func.coalesce(ClubAccount.lifetime_earned, 0) + amount,
         )
     )
     account = await session.get(ClubAccount, user_id)
@@ -2169,10 +2169,10 @@ async def admin_club_adjust_balance(user_id: int, data: dict, user: dict = Depen
                 pass
         adjustment = await session.execute(
             update(ClubAccount)
-            .where(ClubAccount.user_id == user_id, ClubAccount.balance + delta >= 0)
+            .where(ClubAccount.user_id == user_id, func.coalesce(ClubAccount.balance, 0) + delta >= 0)
             .values(
-                balance=ClubAccount.balance + delta,
-                lifetime_earned=ClubAccount.lifetime_earned + (delta if delta > 0 else 0),
+                balance=func.coalesce(ClubAccount.balance, 0) + delta,
+                lifetime_earned=func.coalesce(ClubAccount.lifetime_earned, 0) + (delta if delta > 0 else 0),
             )
         )
         if adjustment.rowcount != 1:
@@ -2688,7 +2688,7 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                     await session.execute(
                         update(ClubAccount)
                         .where(ClubAccount.user_id == buyer.id)
-                        .values(balance=ClubAccount.balance + refund_points)
+                        .values(balance=func.coalesce(ClubAccount.balance, 0) + refund_points)
                     )
                     account = await session.get(ClubAccount, buyer.id)
                     await session.refresh(account)
