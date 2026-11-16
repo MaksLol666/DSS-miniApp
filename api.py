@@ -722,6 +722,11 @@ async def get_cart(user: dict = Depends(current_user)):
 @app.post("/api/cart/add")
 async def cart_add(data: ProductId, user: dict = Depends(current_user)):
     async with SessionLocal() as session:
+        locked = (await session.execute(select(CartItem.id).where(
+            CartItem.user_id == user["id"], CartItem.reserved.is_(True)
+        ).limit(1))).first()
+        if locked:
+            raise HTTPException(409, "Подожди завершения оформления заказа, прежде чем менять корзину.")
         p = await session.get(Product, data.product_id)
         if not p or not p.in_stock or int(p.stock_qty or 0) <= 0:
             raise HTTPException(409, "Товар больше недоступен.")
@@ -829,6 +834,11 @@ async def cart_clear(user: dict = Depends(current_user)):
 async def club_redeem(data: ClubRedeemInput, user: dict = Depends(current_user)):
     uid = user["id"]
     async with SessionLocal() as session:
+        locked = (await session.execute(select(CartItem.id).where(
+            CartItem.user_id == uid, CartItem.reserved.is_(True)
+        ).limit(1))).first()
+        if locked:
+            raise HTTPException(409, "Нельзя менять списание DCP во время оформления заказа.")
         if data.points == 0:
             await session.execute(delete(CartClubRedemption).where(CartClubRedemption.user_id == uid))
             await session.commit()
@@ -866,6 +876,11 @@ async def club_redeem(data: ClubRedeemInput, user: dict = Depends(current_user))
 @app.post("/api/club/redeem/remove")
 async def club_redeem_remove(user: dict = Depends(current_user)):
     async with SessionLocal() as session:
+        locked = (await session.execute(select(CartItem.id).where(
+            CartItem.user_id == user["id"], CartItem.reserved.is_(True)
+        ).limit(1))).first()
+        if locked:
+            raise HTTPException(409, "Нельзя менять списание DCP во время оформления заказа.")
         await session.execute(delete(CartClubRedemption).where(CartClubRedemption.user_id == user["id"]))
         await session.commit()
     return await _cart(user["id"])
@@ -877,6 +892,11 @@ async def apply_promo(data: dict, user: dict = Depends(current_user)):
     if not re.fullmatch(r"[A-Z0-9_-]{1,16}", code):
         raise HTTPException(400, "Проверь написание промокода.")
     async with SessionLocal() as session:
+        locked = (await session.execute(select(CartItem.id).where(
+            CartItem.user_id == user["id"], CartItem.reserved.is_(True)
+        ).limit(1))).first()
+        if locked:
+            raise HTTPException(409, "Нельзя менять промокоды во время оформления заказа.")
         promo = await session.get(Promocode, code)
         if not promo or promo.used or promo.used_count >= promo.max_uses:
             raise HTTPException(404, "Промокод не найден или исчерпан.")
@@ -917,6 +937,11 @@ async def remove_applied_promo(data: dict, user: dict = Depends(current_user)):
     if not re.fullmatch(r"[A-Z0-9_-]{1,16}", code):
         raise HTTPException(400, "Проверь код промокода.")
     async with SessionLocal() as session:
+        locked = (await session.execute(select(CartItem.id).where(
+            CartItem.user_id == user["id"], CartItem.reserved.is_(True)
+        ).limit(1))).first()
+        if locked:
+            raise HTTPException(409, "Нельзя менять промокоды во время оформления заказа.")
         result = await session.execute(delete(CartPromo).where(CartPromo.user_id == user["id"], CartPromo.code == code))
         await session.commit()
         if result.rowcount == 0:
