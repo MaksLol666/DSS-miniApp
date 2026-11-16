@@ -2228,17 +2228,23 @@ async def admin_club_grant_cosmetic(user_id: int, cosmetic_key: str, user: dict 
         cosmetic = await session.get(ClubCosmetic, cosmetic_key)
         if not cosmetic or not cosmetic.active:
             raise HTTPException(404, "Активная косметика не найдена.")
-        exists = (await session.execute(select(ClubUserCosmetic.id).where(
-            ClubUserCosmetic.user_id == user_id, ClubUserCosmetic.cosmetic_key == cosmetic_key
-        ))).first()
-        if not exists:
+        try:
+            async with session.begin_nested():
+                session.add(ClubUserCosmetic(user_id=user_id, cosmetic_key=cosmetic_key, granted_by=user["id"]))
+                await session.flush()
+        except IntegrityError:
+            # Already owned; do not increment the limited supply again.
+            pass
+        else:
             minted = await session.execute(update(ClubCosmetic).where(
                 ClubCosmetic.key == cosmetic_key,
                 ((ClubCosmetic.max_supply == 0) | (ClubCosmetic.issued_count < ClubCosmetic.max_supply))
             ).values(issued_count=ClubCosmetic.issued_count + 1))
-            if not minted.rowcount:
+            if minted.rowcount != 1:
+                await session.execute(delete(ClubUserCosmetic).where(
+                    ClubUserCosmetic.user_id == user_id, ClubUserCosmetic.cosmetic_key == cosmetic_key
+                ))
                 raise HTTPException(409, "Лимит выпуска этой клубной карточки исчерпан.")
-            session.add(ClubUserCosmetic(user_id=user_id, cosmetic_key=cosmetic_key, granted_by=user["id"]))
         await session.commit()
     return {"ok": True}
 
