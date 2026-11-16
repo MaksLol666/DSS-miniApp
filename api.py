@@ -2426,8 +2426,15 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
         session.add(OrderStatusHistory(order_id=order.id, status=new_status, changed_by=actor_id, note="Изменение статуса заказа"))
         if new_status == "rejected":
             for order_item, product in items:
-                product.stock_qty = int(product.stock_qty or 0) + int(order_item.quantity or 1)
-                product.in_stock = product.stock_qty > 0
+                quantity = int(order_item.quantity or 1)
+                await session.execute(
+                    update(Product)
+                    .where(Product.id == product.id)
+                    .values(
+                        stock_qty=Product.stock_qty + quantity,
+                        in_stock=(Product.stock_qty + quantity) > 0,
+                    )
+                )
             if int(order.dcp_spent or 0) > 0 and buyer:
                 refund_key = f"order:{order.id}:club-refund"
                 already_refunded = (await session.execute(select(ClubTransaction.id).where(ClubTransaction.event_key == refund_key))).first()
