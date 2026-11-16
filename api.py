@@ -2643,7 +2643,7 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                 if first_purchase_claim.rowcount == 1:
                     first_bonus = await _award_club_dcp(session, buyer.id, int(club_economy.get("first_order_dcp", 200)), f"user:{buyer.id}:first-order", "Бонус за первую покупку")
                     if first_bonus:
-                        notifications.append((buyer.id, "🎉 DSS CLUB: +200 DCP за первую покупку!"))
+                        notifications.append((buyer.id, f"🎉 DSS CLUB: +{first_bonus} DCP за первую покупку!"))
                     if buyer.referrer_id:
                         ref_id = buyer.referrer_id
                         referral_fixed = round(float(order.total) * REFERRAL_BONUS_PERCENT / 100, 2)
@@ -2663,9 +2663,9 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                             referral_dcp = await _award_club_dcp(session, ref_id, int(club_economy.get("referral_dcp", 150)), f"referral:first-order:{buyer.id}", "Приглашённый завершил первую покупку")
                             referral_sp = await _award_season_points(session, ref_id, int(club_economy.get("referral_sp", 25)), f"season:referral:{buyer.id}", "Новый приглашённый завершил покупку")
                             if referral_dcp:
-                                notifications.append((ref_id, "👥 DSS CLUB: +150 DCP — приглашённый совершил первую покупку."))
+                                notifications.append((ref_id, f"👥 DSS CLUB: +{referral_dcp} DCP — приглашённый совершил первую покупку."))
                             if referral_sp:
-                                notifications.append((ref_id, "❄️ DSS CLUB: +25 сезонных очков SP за нового покупателя по твоей ссылке."))
+                                notifications.append((ref_id, f"❄️ DSS CLUB: +{referral_sp} сезонных очков SP за нового покупателя по твоей ссылке."))
                             if referral_count >= next_at:
                                 milestone_claim = await session.execute(
                                     update(User)
