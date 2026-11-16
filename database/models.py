@@ -21,6 +21,7 @@ class User(Base):
     next_bonus_at: Mapped[int] = mapped_column(Integer, default=10)
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
     is_unreachable: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_captcha_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Category(Base):
