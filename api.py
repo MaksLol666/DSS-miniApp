@@ -793,7 +793,18 @@ async def cart_set_quantity(data: CartQuantityInput, user: dict = Depends(curren
 @app.post("/api/cart/remove")
 async def cart_remove(data: ProductId, user: dict = Depends(current_user)):
     async with SessionLocal() as session:
-        await session.execute(delete(CartItem).where(CartItem.user_id == user["id"], CartItem.product_id == data.product_id))
+        await session.execute(delete(CartItem).where(
+            CartItem.user_id == user["id"],
+            CartItem.product_id == data.product_id,
+            CartItem.reserved.is_(False),
+        ))
+        locked = (await session.execute(select(CartItem.id).where(
+            CartItem.user_id == user["id"],
+            CartItem.product_id == data.product_id,
+            CartItem.reserved.is_(True),
+        ).limit(1))).first()
+        if locked:
+            raise HTTPException(409, "Нельзя изменить корзину во время оформления заказа.")
         await session.commit()
     return await _cart(user["id"])
 
@@ -801,7 +812,14 @@ async def cart_remove(data: ProductId, user: dict = Depends(current_user)):
 @app.post("/api/cart/clear")
 async def cart_clear(user: dict = Depends(current_user)):
     async with SessionLocal() as session:
-        await session.execute(delete(CartItem).where(CartItem.user_id == user["id"]))
+        locked = (await session.execute(select(CartItem.id).where(
+            CartItem.user_id == user["id"], CartItem.reserved.is_(True)
+        ).limit(1))).first()
+        if locked:
+            raise HTTPException(409, "Нельзя очистить корзину во время оформления заказа.")
+        await session.execute(delete(CartItem).where(
+            CartItem.user_id == user["id"], CartItem.reserved.is_(False)
+        ))
         await session.execute(delete(CartPromo).where(CartPromo.user_id == user["id"]))
         await session.commit()
     return await _cart(user["id"])
