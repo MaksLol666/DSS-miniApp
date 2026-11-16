@@ -126,14 +126,14 @@ async def send_review_moderation(review_id: int, order_id: int, username: str | 
 async def _stats_text() -> str:
     async with SessionLocal() as session:
         users = (await session.execute(select(func.count(User.id)))).scalar() or 0
-        orders = (await session.execute(select(func.count(Order.id)).where(Order.status == "approved"))).scalar() or 0
-        pending = (await session.execute(select(func.count(Order.id)).where(Order.status == "pending"))).scalar() or 0
-        revenue = (await session.execute(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == "approved"))).scalar() or 0
+        orders = (await session.execute(select(func.count(Order.id)).where(Order.status == "completed"))).scalar() or 0
+        pending = (await session.execute(select(func.count(Order.id)).where(Order.status.in_(("accepted", "assembling", "assembled", "in_transit"))))).scalar() or 0
+        revenue = (await session.execute(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == "completed"))).scalar() or 0
         products = (await session.execute(select(func.count(Product.id)).where(Product.in_stock.is_(True), Product.stock_qty > 0))).scalar() or 0
         inventory_value = (await session.execute(select(func.coalesce(func.sum(Product.cost_price * Product.stock_qty), 0)).where(Product.cost_price.is_not(None)))).scalar() or 0
         inventory_untracked = (await session.execute(select(func.coalesce(func.sum(Product.stock_qty), 0)).where(Product.stock_qty > 0, Product.cost_price.is_(None)))).scalar() or 0
-        sold_cost = (await session.execute(select(func.coalesce(func.sum(OrderItem.cost_price_snapshot * OrderItem.quantity), 0)).join(Order, Order.id == OrderItem.order_id).where(Order.status == "approved", OrderItem.cost_price_snapshot.is_not(None)))).scalar() or 0
-        sold_untracked = (await session.execute(select(func.coalesce(func.sum(OrderItem.quantity), 0)).join(Order, Order.id == OrderItem.order_id).where(Order.status == "approved", OrderItem.cost_price_snapshot.is_(None)))).scalar() or 0
+        sold_cost = (await session.execute(select(func.coalesce(func.sum(OrderItem.cost_price_snapshot * OrderItem.quantity), 0)).join(Order, Order.id == OrderItem.order_id).where(Order.status == "completed", OrderItem.cost_price_snapshot.is_not(None)))).scalar() or 0
+        sold_untracked = (await session.execute(select(func.coalesce(func.sum(OrderItem.quantity), 0)).join(Order, Order.id == OrderItem.order_id).where(Order.status == "completed", OrderItem.cost_price_snapshot.is_(None)))).scalar() or 0
         top_rows = (await session.execute(select(OrderItem.product_id, func.count(OrderItem.id).label("n")).group_by(OrderItem.product_id).order_by(func.count(OrderItem.id).desc()).limit(5))).all()
         top = []
         for product_id, count in top_rows:
@@ -390,7 +390,7 @@ def _register_handlers(dp: Dispatcher) -> None:
                 await session.execute(delete(Promocode).where(Promocode.owner_id == uid))
                 await session.execute(delete(CartPromo).where(CartPromo.user_id == uid))
             await session.commit()
-            count = (await session.execute(select(func.count(Order.id)).where(Order.user_id == uid, Order.status == "approved"))).scalar() or 0
+            count = (await session.execute(select(func.count(Order.id)).where(Order.user_id == uid, Order.status == "completed"))).scalar() or 0
             text = f"👤 Пользователь: {u.username or 'без username'}\nID: {uid}\nПотрачено: {u.balance:.0f} ₽\nПокупок: {count}\nРефералов: {u.referrals_count}\nСтатус: {'🔴 Заблокирован' if u.is_banned else '🟢 Активен'}"
         if action == "ban":
             await send_message_safe(uid, "❌ Доступ к магазину заблокирован администратором.")
