@@ -2556,7 +2556,10 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                     notifications.append((buyer.id, f"↩️ DSS CLUB: возвращено {refund_points} DCP за отклонённый заказ."))
         if new_status == "completed":
             if buyer:
-                buyer.balance = float(buyer.balance or 0) + float(order.total)
+                await session.execute(
+                    update(User).where(User.id == buyer.id)
+                    .values(balance=User.balance + float(order.total))
+                )
                 club_economy = (await _club_config(session)).get("economy", {})
                 order_dcp = int(club_economy.get("order_dcp", 100))
                 order_sp = int(club_economy.get("order_sp", 10))
@@ -2566,7 +2569,13 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                     notifications.append((buyer.id, f"💜 DSS CLUB: +{earned} DCP за завершённый заказ."))
                 if season_earned:
                     notifications.append((buyer.id, f"❄️ DSS CLUB: +{season_earned} сезонных очков SP за заказ."))
-                if not buyer.first_purchase_done:
+                first_purchase_claim = await session.execute(
+                    update(User)
+                    .where(User.id == buyer.id, User.first_purchase_done.is_(False))
+                    .values(first_purchase_done=True)
+                )
+                buyer.first_purchase_done = True
+                if first_purchase_claim.rowcount == 1:
                     first_bonus = await _award_club_dcp(session, buyer.id, int(club_economy.get("first_order_dcp", 200)), f"user:{buyer.id}:first-order", "Бонус за первую покупку")
                     if first_bonus:
                         notifications.append((buyer.id, "🎉 DSS CLUB: +200 DCP за первую покупку!"))
@@ -2577,21 +2586,36 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                         referrer = await session.get(User, ref_id)
                         milestone_code = None
                         if referrer:
-                            referrer.referrals_count = int(referrer.referrals_count or 0) + 1
+                            await session.execute(
+                                update(User).where(User.id == ref_id)
+                                .values(referrals_count=User.referrals_count + 1)
+                            )
+                            referral_count, next_at = (await session.execute(
+                                select(User.referrals_count, User.next_bonus_at).where(User.id == ref_id)
+                            )).one()
+                            referral_count = int(referral_count or 0)
+                            next_at = int(next_at or REFERRAL_MILESTONE)
                             referral_dcp = await _award_club_dcp(session, ref_id, int(club_economy.get("referral_dcp", 150)), f"referral:first-order:{buyer.id}", "Приглашённый завершил первую покупку")
                             referral_sp = await _award_season_points(session, ref_id, int(club_economy.get("referral_sp", 25)), f"season:referral:{buyer.id}", "Новый приглашённый завершил покупку")
                             if referral_dcp:
                                 notifications.append((ref_id, "👥 DSS CLUB: +150 DCP — приглашённый совершил первую покупку."))
                             if referral_sp:
                                 notifications.append((ref_id, "❄️ DSS CLUB: +25 сезонных очков SP за нового покупателя по твоей ссылке."))
-                            next_at = int(referrer.next_bonus_at or REFERRAL_MILESTONE)
-                            if referrer.referrals_count >= next_at:
-                                milestone_code = await _create_promo(session, ref_id, "percent", REFERRAL_MILESTONE_DISCOUNT)
-                                referrer.next_bonus_at = next_at + REFERRAL_MILESTONE
+                            if referral_count >= next_at:
+                                milestone_claim = await session.execute(
+                                    update(User)
+                                    .where(
+                                        User.id == ref_id,
+                                        User.next_bonus_at == next_at,
+                                        User.referrals_count >= next_at,
+                                    )
+                                    .values(next_bonus_at=next_at + REFERRAL_MILESTONE)
+                                )
+                                if milestone_claim.rowcount == 1:
+                                    milestone_code = await _create_promo(session, ref_id, "percent", REFERRAL_MILESTONE_DISCOUNT)
                             notifications.append((ref_id, f"🎁 Твой приглашённый завершил первую покупку. Промокод на {int(referral_fixed)} ₽: {bonus_code}"))
                             if milestone_code:
-                                notifications.append((ref_id, f"🏆 Уже {referrer.referrals_count} купивших рефералов! Промокод на −{REFERRAL_MILESTONE_DISCOUNT}%: {milestone_code}"))
-                    buyer.first_purchase_done = True
+                                notifications.append((ref_id, f"🏆 Уже {referral_count} купивших рефералов! Промокод на −{REFERRAL_MILESTONE_DISCOUNT}%: {milestone_code}"))
                 await session.flush()
                 notifications.extend((buyer.id, msg) for msg in await _sync_club_activity(session, buyer.id))
                 if buyer.referrer_id:
