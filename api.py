@@ -152,6 +152,7 @@ class ProductInput(BaseModel):
     category_id: int = Field(gt=0)
     brand: str = Field(min_length=1, max_length=64)
     flavor: str = Field(min_length=1, max_length=64)
+    description: str = Field(default="", max_length=4000)
     price: float = Field(gt=0, le=10000000)
     stock_qty: int = Field(default=1, ge=0, le=1000000)
     cost_price: float | None = Field(default=None, ge=0, le=10000000)
@@ -163,6 +164,7 @@ class ProductPatch(BaseModel):
     category_id: int | None = Field(default=None, gt=0)
     brand: str | None = Field(default=None, min_length=1, max_length=64)
     flavor: str | None = Field(default=None, min_length=1, max_length=64)
+    description: str | None = Field(default=None, max_length=4000)
     price: float | None = Field(default=None, gt=0, le=10000000)
     in_stock: bool | None = None
     stock_qty: int | None = Field(default=None, ge=0, le=1000000)
@@ -239,6 +241,7 @@ async def _migrate_legacy_columns() -> None:
         ("club_cosmetics", "requirement_level", "TEXT DEFAULT 'MEMBER'"),
         ("products", "public_release_at", "DATETIME"),
         ("products", "rank_release_dates", "TEXT DEFAULT '{}'"),
+        ("products", "description", "TEXT DEFAULT ''"),
         ("club_cosmetics", "card_primary", "TEXT DEFAULT '#26133b'"),
         ("club_cosmetics", "card_secondary", "TEXT DEFAULT '#0b0812'"),
         ("club_cosmetics", "card_accent", "TEXT DEFAULT '#c49aff'"),
@@ -713,7 +716,7 @@ async def products(category_id: int | None = None, user: dict = Depends(current_
             if not available:
                 continue
             result.append({"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand,
-                "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock),
+                "flavor": p.flavor, "description": p.description or "", "price": float(p.price), "in_stock": bool(p.in_stock),
                 "stock_qty": int(p.stock_qty or 0), "images": p.images, "release_at": release_at})
         return result
 
@@ -726,7 +729,7 @@ async def favorites(user: dict = Depends(current_user)):
             .where(Favorite.user_id == user["id"]).order_by(Favorite.created_at.desc())
         )).scalars().all()
         return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand,
-                 "flavor": p.flavor, "price": float(p.price), "in_stock": bool(p.in_stock),
+                 "flavor": p.flavor, "description": p.description or "", "price": float(p.price), "in_stock": bool(p.in_stock),
                  "stock_qty": int(p.stock_qty or 0), "images": p.images} for p in rows]
 
 
@@ -1023,7 +1026,7 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
                 raise HTTPException(409, f"Для товара {p.brand} — {p.flavor} доступно {int(p.stock_qty or 0)} шт., в корзине {requested}.")
         category_names = {c.id: c.name for c in (await session.execute(select(Category))).scalars().all()}
         items = [{"product_id": p.id, "category_id": p.category_id, "category_name": category_names.get(p.category_id, ""),
-            "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None,
+            "brand": p.brand, "flavor": p.flavor, "description": p.description or "", "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None,
             "quantity": int(cart_item.quantity or 1)} for cart_item, p in rows]
         codes = await _promo_codes(session, user["id"])
         promos = list((await session.execute(select(Promocode).where(Promocode.code.in_(codes)))).scalars().all()) if codes else []
@@ -2919,7 +2922,7 @@ async def admin_product_create(data: ProductInput, user: dict = Depends(admin_us
         n = (await session.execute(select(func.max(Product.number)).where(Product.category_id == data.category_id))).scalar() or 0
         config = await _club_config(session)
         rank_dates = _normalize_rank_release_dates(data.rank_release_dates, config.get("levels", CLUB_LEVELS))
-        product = Product(category_id=data.category_id, number=n + 1, brand=data.brand.strip(), flavor=data.flavor.strip(), price=data.price, cost_price=data.cost_price, stock_qty=data.stock_qty, in_stock=data.stock_qty > 0,
+        product = Product(category_id=data.category_id, number=n + 1, brand=data.brand.strip(), flavor=data.flavor.strip(), description=data.description.strip(), price=data.price, cost_price=data.cost_price, stock_qty=data.stock_qty, in_stock=data.stock_qty > 0,
             public_release_at=_promo_datetime(data.public_release_at), rank_release_dates=json.dumps(rank_dates, ensure_ascii=False))
         session.add(product)
         await session.commit()
@@ -3023,7 +3026,7 @@ async def admin_product_update(product_id: int, data: ProductPatch, user: dict =
                 config = await _club_config(session)
                 p.rank_release_dates = json.dumps(_normalize_rank_release_dates(value, config.get("levels", CLUB_LEVELS)), ensure_ascii=False)
             elif value is not None:
-                setattr(p, key, value.strip() if key in ("brand", "flavor") else value)
+                setattr(p, key, value.strip() if key in ("brand", "flavor", "description") else value)
         if "stock_qty" in values and values["stock_qty"] is not None:
             p.in_stock = values["stock_qty"] > 0
         elif values.get("in_stock") is True and int(p.stock_qty or 0) <= 0:
