@@ -396,7 +396,12 @@ def _register_handlers(dp: Dispatcher) -> None:
                 u.balance = 0
                 u.referrals_count = 0
                 u.next_bonus_at = 10
-                u.first_purchase_done = False
+                completed_orders = int((await session.execute(
+                    select(func.count(Order.id)).where(Order.user_id == uid, Order.status == "completed")
+                )).scalar() or 0)
+                # Preserve the first-purchase flag when history is retained, or a later order
+                # could issue another referral coupon for the same buyer.
+                u.first_purchase_done = completed_orders > 0
                 owned_codes = select(Promocode.code).where(Promocode.owner_id == uid)
                 await session.execute(delete(CartPromo).where(CartPromo.code.in_(owned_codes)))
                 await session.execute(delete(CartPromo).where(CartPromo.user_id == uid))
@@ -495,11 +500,15 @@ def _register_handlers(dp: Dispatcher) -> None:
         elif action == "wipe" and data[2] == "yes":
             async with SessionLocal() as session:
                 users = (await session.execute(select(User).where(User.id != ADMIN_ID))).scalars().all()
+                completed_buyer_ids = set((await session.execute(
+                    select(Order.user_id).where(Order.status == "completed").distinct()
+                )).scalars().all())
                 for u in users:
                     u.balance = 0
                     u.referrals_count = 0
                     u.next_bonus_at = 10
-                    u.first_purchase_done = False
+                    # Keep the historical first-purchase guard because order history remains.
+                    u.first_purchase_done = u.id in completed_buyer_ids
                 await session.execute(delete(CartPromo))
                 await session.execute(delete(Promocode).where(Promocode.owner_id != ADMIN_ID))
                 await session.commit()
