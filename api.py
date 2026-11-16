@@ -2909,7 +2909,7 @@ async def admin_products(user: dict = Depends(admin_user)):
             .group_by(OrderItem.product_id)
         )).all()
         reserved = {int(product_id): int(quantity or 0) for product_id, quantity in reserved_rows}
-        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0), "reserved_qty": reserved.get(p.id, 0), "images": p.images,
+        return [{"id": p.id, "category_id": p.category_id, "number": p.number, "brand": p.brand, "flavor": p.flavor, "description": p.description or "", "price": float(p.price), "cost_price": float(p.cost_price) if p.cost_price is not None else None, "in_stock": bool(p.in_stock), "stock_qty": int(p.stock_qty or 0), "reserved_qty": reserved.get(p.id, 0), "images": p.images,
                  "public_release_at": _promo_datetime_to_local(p.public_release_at),
                  "rank_release_dates": {str(k): _promo_datetime_to_local(datetime.fromisoformat(str(v))) for k, v in (json.loads(p.rank_release_dates or "{}") if isinstance(json.loads(p.rank_release_dates or "{}"), dict) else {}).items()}} for p in rows]
 
