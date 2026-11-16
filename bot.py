@@ -553,6 +553,7 @@ def _register_handlers(dp: Dispatcher) -> None:
                     await callback.answer("Этот отзыв уже обрабатывается или опубликован.", show_alert=True)
                     return
                 buyer = await session.get(User, review.user_id)
+                review_user_id = review.user_id
                 username = buyer.username if buyer else None
                 order_id, rating, review_text = review.order_id, review.rating, review.text or ""
                 photo_path = str(Path("data/uploads/reviews") / Path(review.photo_id).name) if review.has_photo and review.photo_id else None
@@ -584,6 +585,15 @@ def _register_handlers(dp: Dispatcher) -> None:
             if not published:
                 await callback.answer("Не удалось опубликовать. Проверь права бота и ID канала.", show_alert=True)
                 return
+            try:
+                from api import _sync_club_activity
+                async with SessionLocal() as session:
+                    reward_messages = await _sync_club_activity(session, review_user_id)
+                    await session.commit()
+                for reward_message in reward_messages:
+                    await send_message_safe(review_user_id, reward_message)
+            except Exception:
+                log.exception("Не удалось синхронизировать DSS CLUB после публикации отзыва")
             await callback.message.edit_reply_markup(reply_markup=None)
             await callback.message.answer(f"✅ Отзыв №{review_id} опубликован в @OTZOV_DSS.")
             await callback.answer("Опубликовано")
