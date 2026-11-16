@@ -37,6 +37,7 @@ class Product(Base):
     number: Mapped[int] = mapped_column(Integer)
     brand: Mapped[str] = mapped_column(String(64))
     flavor: Mapped[str] = mapped_column(String(64))
+    description: Mapped[str] = mapped_column(Text, default="")
     price: Mapped[float] = mapped_column(Float)
     cost_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     in_stock: Mapped[bool] = mapped_column(Boolean, default=True)
