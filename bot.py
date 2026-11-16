@@ -666,15 +666,29 @@ def _register_handlers(dp: Dispatcher) -> None:
                 if not p:
                     await message.answer("Товар не найден.")
                 else:
-                    p.brand, p.flavor, p.price = parts[0], parts[1], price
-                    p.stock_qty, p.in_stock = qty, qty > 0
-                    if len(parts) == 5:
-                        p.cost_price = cost
-                    await session.commit()
-                    flow["step"] = "photos"
-                    flow["photo_file_ids"] = []
-                    await message.answer(f"✅ Данные товара #{p.id} обновлены. Теперь отправь дополнительные фото (до 5 всего) или напиши «Готово».")
-                    return
+                    pending = None
+                    if qty == 0:
+                        pending = (await session.execute(
+                            select(OrderItem.id)
+                            .join(Order, Order.id == OrderItem.order_id)
+                            .where(
+                                OrderItem.product_id == p.id,
+                                Order.status.in_(("accepted", "assembling", "assembled", "in_transit")),
+                            )
+                            .limit(1)
+                        )).first()
+                    if pending:
+                        await message.answer("⚠️ Нельзя обнулить остаток, пока по товару есть незавершённый заказ.")
+                    else:
+                        p.brand, p.flavor, p.price = parts[0], parts[1], price
+                        p.stock_qty, p.in_stock = qty, qty > 0
+                        if len(parts) == 5:
+                            p.cost_price = cost
+                        await session.commit()
+                        flow["step"] = "photos"
+                        flow["photo_file_ids"] = []
+                        await message.answer(f"✅ Данные товара #{p.id} обновлены. Теперь отправь дополнительные фото (до 5 всего) или напиши «Готово».")
+                        return
             ADMIN_FLOW.pop(message.from_user.id, None)
 
 
