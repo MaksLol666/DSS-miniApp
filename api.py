@@ -939,6 +939,7 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
             if debit.rowcount != 1:
                 raise HTTPException(409, "Недостаточно DCP на балансе. Обнови корзину.")
             account = await session.get(ClubAccount, user["id"])
+            await session.refresh(account)
             club_discount = float(club_offer["discount"])
             totals["total"] = round(max(0, totals["subtotal"] - club_discount), 2)
             totals["percent_discount_amount"] = 0
@@ -1090,6 +1091,7 @@ async def _award_club_dcp(session, user_id: int, amount: int, event_key: str, re
         )
     )
     account = await session.get(ClubAccount, user_id)
+    await session.refresh(account)
     transaction.balance_after = int(account.balance or 0)
     return amount
 
@@ -2040,6 +2042,7 @@ async def admin_club_adjust_balance(user_id: int, data: dict, user: dict = Depen
         if adjustment.rowcount != 1:
             raise HTTPException(409, "На балансе недостаточно DCP для списания.")
         account = await session.get(ClubAccount, user_id)
+        await session.refresh(account)
         new_balance = int(account.balance or 0)
         session.add(ClubTransaction(user_id=user_id, event_key=f"admin-adjust:{user_id}:{secrets.token_hex(8)}",
             kind="admin_adjust", amount=delta, balance_after=new_balance, reason=reason))
@@ -2552,6 +2555,7 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                         .values(balance=ClubAccount.balance + refund_points)
                     )
                     account = await session.get(ClubAccount, buyer.id)
+                    await session.refresh(account)
                     refund_tx.balance_after = int(account.balance or 0)
                     notifications.append((buyer.id, f"↩️ DSS CLUB: возвращено {refund_points} DCP за отклонённый заказ."))
         if new_status == "completed":
