@@ -2011,6 +2011,8 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
             level["perks"] = [str(x)[:120] for x in perks[:10]]
         if "MEMBER" not in seen:
             raise HTTPException(400, "Базовый ранг MEMBER должен оставаться в системе.")
+        if not levels or str(levels[0].get("code", "")).upper() != "MEMBER":
+            raise HTTPException(400, "Базовый ранг MEMBER должен быть первым в списке уровней.")
         allowed_level_codes = {level["code"] for level in levels}
         task_level_refs = (await session.execute(select(ClubTaskConfig.min_level))).scalars().all()
         cosmetic_level_refs = (await session.execute(select(ClubCosmetic.requirement_level))).scalars().all()
