@@ -903,6 +903,8 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
             if promo.owner_id not in (0, user["id"], ADMIN_ID):
                 raise HTTPException(403, "Один из промокодов выдан другому пользователю.")
             _validate_promo_for_items(promo, items)
+        # Calculate the discount before reserving the last available use.
+        totals = _totals(items, promos)
         # Reserve limited-use promo codes at checkout, not after order completion.
         # The conditional UPDATE prevents two simultaneous checkouts from taking the last use.
         for promo in promos:
@@ -917,7 +919,6 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
             )
             if reserved.rowcount != 1:
                 raise HTTPException(409, f"Промокод {promo.code} уже использован или исчерпан.")
-        totals = _totals(items, promos)
         redemption = await session.get(CartClubRedemption, user["id"])
         dcp_spent = int(redemption.points or 0) if redemption else 0
         club_discount = 0.0
