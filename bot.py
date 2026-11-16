@@ -2,6 +2,7 @@ import asyncio
 import logging
 import json
 import re
+import math
 import secrets
 from pathlib import Path
 from datetime import datetime
@@ -328,7 +329,8 @@ def _register_handlers(dp: Dispatcher) -> None:
             amount = float(amount_s.replace(",", "."))
             owner_id = int(tail[0]) if tail else 0
             max_uses = int(tail[1]) if len(tail) > 1 else 1
-            if (kind not in ("fixed", "percent") or amount <= 0 or amount > 10000000
+            if (not math.isfinite(amount) or kind not in ("fixed", "percent")
+                    or amount <= 0 or amount > 10000000
                     or (kind == "percent" and amount > 100) or owner_id < 0
                     or max_uses < 1 or max_uses > 1000000):
                 raise ValueError()
