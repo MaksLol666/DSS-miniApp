@@ -1124,8 +1124,13 @@ async def _save_club_config(session, value: dict) -> None:
 async def _ensure_club_tasks(session):
     for item in DEFAULT_CLUB_TASKS:
         if await session.get(ClubTaskConfig, item["key"]) is None:
-            session.add(ClubTaskConfig(**item))
-    await session.flush()
+            try:
+                async with session.begin_nested():
+                    session.add(ClubTaskConfig(**item))
+                    await session.flush()
+            except IntegrityError:
+                # Another request may have seeded this default task first.
+                pass
 
 
 CLUB_MONTHLY_DISCOUNTS = {
@@ -1519,8 +1524,13 @@ async def _ensure_default_club_cosmetics(session):
     ]
     for item in defaults:
         if await session.get(ClubCosmetic, item["key"]) is None:
-            session.add(ClubCosmetic(**item))
-    await session.flush()
+            try:
+                async with session.begin_nested():
+                    session.add(ClubCosmetic(**item))
+                    await session.flush()
+            except IntegrityError:
+                # Concurrent first visits can attempt to seed the same starter item.
+                pass
 
 
 @app.get("/api/club/activities")
