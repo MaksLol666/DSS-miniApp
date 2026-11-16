@@ -2814,6 +2814,18 @@ async def admin_product_update(product_id: int, data: ProductPatch, user: dict =
         if not p:
             raise HTTPException(404, "Товар не найден.")
         values = data.model_dump(exclude_unset=True)
+        if values.get("in_stock") is False or values.get("stock_qty") == 0:
+            pending_order = (await session.execute(
+                select(OrderItem.id)
+                .join(Order, Order.id == OrderItem.order_id)
+                .where(
+                    OrderItem.product_id == product_id,
+                    Order.status.in_(("accepted", "assembling", "assembled", "in_transit")),
+                )
+                .limit(1)
+            )).first()
+            if pending_order:
+                raise HTTPException(409, "Нельзя скрыть товар или обнулить остаток, пока по нему есть незавершённый заказ.")
         if values.get("category_id") is not None and not await session.get(Category, values["category_id"]):
             raise HTTPException(404, "Категория не найдена.")
         for key, value in values.items():
@@ -2842,6 +2854,17 @@ async def admin_product_delete(product_id: int, user: dict = Depends(admin_user)
         p = await session.get(Product, product_id)
         if not p:
             raise HTTPException(404, "Товар не найден.")
+        pending_order = (await session.execute(
+            select(OrderItem.id)
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(
+                OrderItem.product_id == product_id,
+                Order.status.in_(("accepted", "assembling", "assembled", "in_transit")),
+            )
+            .limit(1)
+        )).first()
+        if pending_order:
+            raise HTTPException(409, "Сначала заверши или отклони все незавершённые заказы с этим товаром.")
         used = (await session.execute(select(OrderItem.id).where(OrderItem.product_id == product_id).limit(1))).first()
         if used:
             p.in_stock = False
