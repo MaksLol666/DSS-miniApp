@@ -911,6 +911,15 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == user["id"]).order_by(CartItem.id))).all()
         if not rows:
             raise HTTPException(400, "Корзина пуста.")
+        if any(bool(cart_item.reserved) for cart_item, _product in rows):
+            raise HTTPException(409, "Оформление этой корзины уже выполняется. Обнови страницу через несколько секунд.")
+        checkout_claim = await session.execute(
+            update(CartItem)
+            .where(CartItem.user_id == user["id"], CartItem.reserved.is_(False))
+            .values(reserved=True)
+        )
+        if checkout_claim.rowcount != len(rows):
+            raise HTTPException(409, "Корзина уже изменилась или оформляется в другом запросе. Обнови её.")
         for cart_item, p in rows:
             await _ensure_product_released(session, p, user["id"])
             requested = int(cart_item.quantity or 1)
