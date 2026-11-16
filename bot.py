@@ -510,6 +510,15 @@ def _register_handlers(dp: Dispatcher) -> None:
                 await callback.message.answer(f"🗑 Товар #{pid} удалён или скрыт из каталога.")
         elif action == "wipe" and data[2] == "yes":
             async with SessionLocal() as session:
+                pending_order = (await session.execute(
+                    select(Order.id).where(
+                        Order.status.in_(("accepted", "assembling", "assembled", "in_transit"))
+                    ).limit(1)
+                )).first()
+                if pending_order:
+                    await callback.message.answer("⚠️ Сначала заверши или отклони все незавершённые заказы, затем повтори сброс статистики.")
+                    await callback.answer()
+                    return
                 users = (await session.execute(select(User).where(User.id != ADMIN_ID))).scalars().all()
                 completed_buyer_ids = set((await session.execute(
                     select(Order.user_id).where(Order.status == "completed").distinct()
