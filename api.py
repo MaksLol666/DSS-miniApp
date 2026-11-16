@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -3105,6 +3106,8 @@ async def admin_promos(user: dict = Depends(admin_user)):
 
 @app.post("/api/admin/promos")
 async def admin_promo_create(data: PromoInput, user: dict = Depends(admin_user)):
+    if not math.isfinite(data.amount) or not math.isfinite(data.min_order):
+        raise HTTPException(400, "Сумма скидки и минимальный заказ должны быть конечными числами.")
     if data.kind not in ("fixed", "percent") or (data.kind == "percent" and data.amount > 100):
         raise HTTPException(400, "Проверь тип и размер скидки.")
     if data.target_type not in ("all", "product", "category"):
