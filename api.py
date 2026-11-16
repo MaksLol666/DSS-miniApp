@@ -1753,7 +1753,8 @@ async def _ensure_default_club_cosmetics(session):
         {"key": "rank_ambassador_frame", "kind": "frame", "title": "AMBASSADOR · Prismatic", "icon": "♕", "rarity": "legendary", "description": "Радужная неоновая рамка ранга AMBASSADOR", "card_accent": "rainbow", "card_primary": "#160d20", "card_animation": "rainbow", "requirement_level": "AMBASSADOR"},
     ]
     for item in defaults:
-        if await session.get(ClubCosmetic, item["key"]) is None:
+        existing = await session.get(ClubCosmetic, item["key"])
+        if existing is None:
             try:
                 async with session.begin_nested():
                     session.add(ClubCosmetic(**item))
@@ -1761,6 +1762,9 @@ async def _ensure_default_club_cosmetics(session):
             except IntegrityError:
                 # Concurrent first visits can attempt to seed the same starter item.
                 pass
+        elif item.get("active") is False and existing.active:
+            # Hide the old shared starter cosmetics without deleting user ownership history.
+            existing.active = False
 
 
 @app.get("/api/club/activities")
