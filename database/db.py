@@ -97,11 +97,32 @@ async def init_db() -> None:
                 await connection.exec_driver_sql("ALTER TABLE reviews ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'pending'")
 
         else:
+            postgres_migrations = [
+                "ALTER TABLE club_cosmetics ADD COLUMN IF NOT EXISTS image_url VARCHAR(512) NOT NULL DEFAULT ''",
+                "ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_qty INTEGER NOT NULL DEFAULT 1",
+                "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_urls VARCHAR(4096) NOT NULL DEFAULT '[]'",
+                "ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price FLOAT",
+                "ALTER TABLE products ADD COLUMN IF NOT EXISTS public_release_at TIMESTAMP",
+                "ALTER TABLE products ADD COLUMN IF NOT EXISTS rank_release_dates TEXT NOT NULL DEFAULT '{}'",
+                "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1",
+                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1",
+                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cost_price_snapshot FLOAT",
+                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS brand_snapshot VARCHAR(64)",
+                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS flavor_snapshot VARCHAR(64)",
+                "ALTER TABLE promocodes ADD COLUMN IF NOT EXISTS target_type VARCHAR(16) NOT NULL DEFAULT 'all'",
+                "ALTER TABLE promocodes ADD COLUMN IF NOT EXISTS target_id INTEGER",
+                "ALTER TABLE promocodes ADD COLUMN IF NOT EXISTS min_order FLOAT NOT NULL DEFAULT 0",
+                "ALTER TABLE promocodes ADD COLUMN IF NOT EXISTS starts_at TIMESTAMP",
+                "ALTER TABLE promocodes ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
+                "ALTER TABLE reviews ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'pending'",
+            ]
+            for statement in postgres_migrations:
+                await connection.exec_driver_sql(statement)
             await connection.exec_driver_sql(
-                "ALTER TABLE club_cosmetics ADD COLUMN IF NOT EXISTS image_url VARCHAR(512) NOT NULL DEFAULT ''"
+                "UPDATE cart_items SET quantity = 1 WHERE quantity IS NULL OR quantity < 1"
             )
             await connection.exec_driver_sql(
-                "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1"
+                "UPDATE order_items SET quantity = 1 WHERE quantity IS NULL OR quantity < 1"
             )
             await connection.exec_driver_sql(
                 "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1"
