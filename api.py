@@ -2514,7 +2514,7 @@ async def admin_club_cosmetic_image_upload(
         item.image_url = f"/uploads/club-cosmetics/{filename}"
         await session.commit()
     old_name = Path(old_url).name
-    if old_url.startswith("/uploads/club-cosmetics/") and re.fullmatch(r"[a-f0-9]{24}\\.webp", old_name):
+    if old_url.startswith("/uploads/club-cosmetics/") and re.fullmatch(r"[a-f0-9]{24}\.webp", old_name):
         (CLUB_COSMETIC_UPLOAD_DIR / old_name).unlink(missing_ok=True)
     return {"ok": True, "image_url": item.image_url}
 
@@ -2522,7 +2522,7 @@ async def admin_club_cosmetic_image_upload(
 @app.get("/uploads/club-cosmetics/{filename}")
 async def club_cosmetic_image(filename: str):
     safe_name = Path(filename).name
-    if safe_name != filename or not re.fullmatch(r"[a-f0-9]{24}\\.webp", safe_name):
+    if safe_name != filename or not re.fullmatch(r"[a-f0-9]{24}\.webp", safe_name):
         raise HTTPException(404, "Изображение не найдено.")
     target = CLUB_COSMETIC_UPLOAD_DIR / safe_name
     if not target.is_file():
