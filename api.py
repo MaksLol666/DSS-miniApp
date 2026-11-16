@@ -903,6 +903,20 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
             if promo.owner_id not in (0, user["id"], ADMIN_ID):
                 raise HTTPException(403, "Один из промокодов выдан другому пользователю.")
             _validate_promo_for_items(promo, items)
+        # Reserve limited-use promo codes at checkout, not after order completion.
+        # The conditional UPDATE prevents two simultaneous checkouts from taking the last use.
+        for promo in promos:
+            reserved = await session.execute(
+                update(Promocode)
+                .where(
+                    Promocode.code == promo.code,
+                    Promocode.used.is_(False),
+                    Promocode.used_count < Promocode.max_uses,
+                )
+                .values(used_count=Promocode.used_count + 1)
+            )
+            if reserved.rowcount != 1:
+                raise HTTPException(409, f"Промокод {promo.code} уже использован или исчерпан.")
         totals = _totals(items, promos)
         redemption = await session.get(CartClubRedemption, user["id"])
         dcp_spent = int(redemption.points or 0) if redemption else 0
@@ -915,9 +929,14 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
             required_points = int(club_offer["required_points"])
             if not club_offer["available"] or dcp_spent != required_points:
                 raise HTTPException(409, "Условия фиксированной скидки DSS CLUB изменились. Обнови корзину.")
-            account = await session.get(ClubAccount, user["id"])
-            if account is None or int(account.balance or 0) < required_points:
+            debit = await session.execute(
+                update(ClubAccount)
+                .where(ClubAccount.user_id == user["id"], ClubAccount.balance >= required_points)
+                .values(balance=ClubAccount.balance - required_points)
+            )
+            if debit.rowcount != 1:
                 raise HTTPException(409, "Недостаточно DCP на балансе. Обнови корзину.")
+            account = await session.get(ClubAccount, user["id"])
             club_discount = float(club_offer["discount"])
             totals["total"] = round(max(0, totals["subtotal"] - club_discount), 2)
             totals["percent_discount_amount"] = 0
@@ -958,9 +977,8 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
         await session.execute(delete(CartPromo).where(CartPromo.user_id == user["id"]))
         await session.execute(delete(CartClubRedemption).where(CartClubRedemption.user_id == user["id"]))
         if dcp_spent:
-            account.balance = int(account.balance or 0) - dcp_spent
             session.add(ClubTransaction(user_id=user["id"], event_key=f"order:{order.id}:club-spend", kind="spend", amount=-dcp_spent,
-                balance_after=account.balance, reason=f"Скидка DSS CLUB по заказу DSS-{order.id:06d}"))
+                balance_after=int(account.balance or 0), reason=f"Скидка DSS CLUB по заказу DSS-{order.id:06d}"))
         await session.commit()
         await session.refresh(order)
         record = await session.get(User, user["id"])
@@ -2425,6 +2443,14 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
         order.status = new_status
         session.add(OrderStatusHistory(order_id=order.id, status=new_status, changed_by=actor_id, note="Изменение статуса заказа"))
         if new_status == "rejected":
+            # Release promo reservations for a rejected order.
+            if order.promo_codes:
+                for code in filter(None, order.promo_codes.split(",")):
+                    await session.execute(
+                        update(Promocode)
+                        .where(Promocode.code == code, Promocode.used_count > 0)
+                        .values(used_count=Promocode.used_count - 1, used=False)
+                    )
             for order_item, product in items:
                 quantity = int(order_item.quantity or 1)
                 await session.execute(
@@ -2491,12 +2517,6 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                 notifications.extend((buyer.id, msg) for msg in await _sync_club_activity(session, buyer.id))
                 if buyer.referrer_id:
                     notifications.extend((buyer.referrer_id, msg) for msg in await _sync_club_activity(session, buyer.referrer_id))
-            if order.promo_codes:
-                for code in filter(None, order.promo_codes.split(",")):
-                    promo = await session.get(Promocode, code)
-                    if promo and promo.used_count < promo.max_uses:
-                        promo.used_count += 1
-                        promo.used = promo.used_count >= promo.max_uses
         if buyer:
             msg = f"❌ Заказ DSS-{order_id:06d} отклонён. Зарезервированный товар возвращён на склад." if new_status == "rejected" else f"📦 Заказ DSS-{order_id:06d}: статус изменён — {ORDER_STATUS_LABELS[new_status]}."
             notifications.append((buyer.id, msg))
