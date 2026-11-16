@@ -577,7 +577,8 @@ def _club_discount_for_cart(items: list[dict], subtotal: float, config: dict | N
     eligible_subtotal = round(eligible_subtotal, 2)
     eligible_gross_profit = round(eligible_gross_profit, 2)
     available = bool(
-        discount > 0
+        subtotal + 0.001 >= min_order
+        and discount > 0
         and eligible_subtotal + 0.001 >= discount
     )
     if subtotal + 0.001 < min_order:
@@ -585,7 +586,7 @@ def _club_discount_for_cart(items: list[dict], subtotal: float, config: dict | N
     elif discount <= 0:
         reason = "Для этой суммы корзины скидка DCP недоступна."
     elif eligible_subtotal <= 0:
-        reason = "Нет товаров стоимостью от 500 ₽."
+        reason = f"Нет товаров стоимостью от {min_product_price} ₽."
     elif eligible_subtotal + 0.001 < discount:
         reason = "Стоимость подходящих товаров недостаточна для этой фиксированной скидки."
     else:
