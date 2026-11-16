@@ -2057,13 +2057,15 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
             if not isinstance(values, list) or len(values) > 30:
                 raise HTTPException(400, f"Некорректные рубежи {field}.")
             cleaned = []
+            previous_threshold = 0
             for item in values:
                 if not isinstance(item, (list, tuple)) or len(item) != 2:
                     raise HTTPException(400, "Рубеж должен содержать количество и награду.")
                 threshold, reward = int(item[0]), int(item[1])
-                if threshold < 1 or reward < 0 or reward > 1000000:
-                    raise HTTPException(400, "Некорректный рубеж или награда.")
+                if threshold <= previous_threshold or reward < 0 or reward > 1000000:
+                    raise HTTPException(400, "Рубежи должны идти по возрастанию без повторов, награда — от 0 до 1000000.")
                 cleaned.append([threshold, reward])
+                previous_threshold = threshold
             economy[field] = cleaned
         levels = current.get("levels", [])
         if not isinstance(levels, list) or not levels or len(levels) > 20:
