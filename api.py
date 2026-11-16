@@ -1493,10 +1493,23 @@ async def _club_task_count(session, user_id: int, task, start) -> int:
             )
         )).scalar() or 0
     else:
+        completed_times = (
+            select(
+                OrderStatusHistory.order_id.label("order_id"),
+                func.max(OrderStatusHistory.created_at).label("completed_at"),
+            )
+            .where(OrderStatusHistory.status == "completed")
+            .group_by(OrderStatusHistory.order_id)
+            .subquery()
+        )
         value = (await session.execute(
-            select(func.count(func.distinct(OrderStatusHistory.order_id)))
-            .join(Order, Order.id == OrderStatusHistory.order_id)
-            .where(Order.user_id == user_id, OrderStatusHistory.status == "completed", OrderStatusHistory.created_at >= start)
+            select(func.count(Order.id))
+            .outerjoin(completed_times, completed_times.c.order_id == Order.id)
+            .where(
+                Order.user_id == user_id,
+                Order.status == "completed",
+                func.coalesce(completed_times.c.completed_at, Order.created_at) >= start,
+            )
         )).scalar() or 0
     return int(value)
 
