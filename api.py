@@ -1048,9 +1048,20 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
                     409,
                     f"Товар {p.brand} — {p.flavor} только что закончился. Обнови корзину.",
                 )
-        await session.execute(delete(CartItem).where(CartItem.user_id == user["id"]))
-        await session.execute(delete(CartPromo).where(CartPromo.user_id == user["id"]))
-        await session.execute(delete(CartClubRedemption).where(CartClubRedemption.user_id == user["id"]))
+        # Remove only the cart snapshot claimed by this checkout. Any item added
+        # after the snapshot remains in the user's cart for the next order.
+        await session.execute(delete(CartItem).where(
+            CartItem.user_id == user["id"], CartItem.reserved.is_(True)
+        ))
+        if codes:
+            await session.execute(delete(CartPromo).where(
+                CartPromo.user_id == user["id"], CartPromo.code.in_(codes)
+            ))
+        if dcp_spent:
+            await session.execute(delete(CartClubRedemption).where(
+                CartClubRedemption.user_id == user["id"],
+                CartClubRedemption.points == dcp_spent,
+            ))
         if dcp_spent:
             session.add(ClubTransaction(user_id=user["id"], event_key=f"order:{order.id}:club-spend", kind="spend", amount=-dcp_spent,
                 balance_after=int(account.balance or 0), reason=f"Скидка DSS CLUB по заказу DSS-{order.id:06d}"))
