@@ -387,8 +387,10 @@ def _register_handlers(dp: Dispatcher) -> None:
                 u.referrals_count = 0
                 u.next_bonus_at = 10
                 u.first_purchase_done = False
-                await session.execute(delete(Promocode).where(Promocode.owner_id == uid))
+                owned_codes = select(Promocode.code).where(Promocode.owner_id == uid)
+                await session.execute(delete(CartPromo).where(CartPromo.code.in_(owned_codes)))
                 await session.execute(delete(CartPromo).where(CartPromo.user_id == uid))
+                await session.execute(delete(Promocode).where(Promocode.owner_id == uid))
             await session.commit()
             count = (await session.execute(select(func.count(Order.id)).where(Order.user_id == uid, Order.status == "completed"))).scalar() or 0
             text = f"👤 Пользователь: {u.username or 'без username'}\nID: {uid}\nПотрачено: {u.balance:.0f} ₽\nПокупок: {count}\nРефералов: {u.referrals_count}\nСтатус: {'🔴 Заблокирован' if u.is_banned else '🟢 Активен'}"
@@ -472,8 +474,8 @@ def _register_handlers(dp: Dispatcher) -> None:
                     u.referrals_count = 0
                     u.next_bonus_at = 10
                     u.first_purchase_done = False
-                await session.execute(delete(Promocode).where(Promocode.owner_id != ADMIN_ID))
                 await session.execute(delete(CartPromo))
+                await session.execute(delete(Promocode).where(Promocode.owner_id != ADMIN_ID))
                 await session.commit()
             await callback.message.answer("♻️ Статистика всех пользователей сброшена. Аккаунты и история заказов сохранены.")
         await callback.answer()
