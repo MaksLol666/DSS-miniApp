@@ -2016,15 +2016,24 @@ async def admin_club_adjust_balance(user_id: int, data: dict, user: dict = Depen
             raise HTTPException(404, "Пользователь не найден.")
         account = await session.get(ClubAccount, user_id)
         if account is None:
-            account = ClubAccount(user_id=user_id, balance=0, lifetime_earned=0)
-            session.add(account)
-            await session.flush()
-        new_balance = int(account.balance or 0) + delta
-        if new_balance < 0:
+            try:
+                async with session.begin_nested():
+                    session.add(ClubAccount(user_id=user_id, balance=0, lifetime_earned=0))
+                    await session.flush()
+            except IntegrityError:
+                pass
+        adjustment = await session.execute(
+            update(ClubAccount)
+            .where(ClubAccount.user_id == user_id, ClubAccount.balance + delta >= 0)
+            .values(
+                balance=ClubAccount.balance + delta,
+                lifetime_earned=ClubAccount.lifetime_earned + (delta if delta > 0 else 0),
+            )
+        )
+        if adjustment.rowcount != 1:
             raise HTTPException(409, "На балансе недостаточно DCP для списания.")
-        account.balance = new_balance
-        if delta > 0:
-            account.lifetime_earned = int(account.lifetime_earned or 0) + delta
+        account = await session.get(ClubAccount, user_id)
+        new_balance = int(account.balance or 0)
         session.add(ClubTransaction(user_id=user_id, event_key=f"admin-adjust:{user_id}:{secrets.token_hex(8)}",
             kind="admin_adjust", amount=delta, balance_after=new_balance, reason=reason))
         await session.commit()
@@ -2506,17 +2515,31 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
                 )
             if int(order.dcp_spent or 0) > 0 and buyer:
                 refund_key = f"order:{order.id}:club-refund"
-                already_refunded = (await session.execute(select(ClubTransaction.id).where(ClubTransaction.event_key == refund_key))).first()
-                if not already_refunded:
+                refund_points = int(order.dcp_spent)
+                refund_tx = ClubTransaction(user_id=buyer.id, event_key=refund_key, kind="refund", amount=refund_points,
+                    balance_after=0, reason=f"Возврат DCP за отклонённый заказ DSS-{order.id:06d}")
+                try:
+                    async with session.begin_nested():
+                        session.add(refund_tx)
+                        await session.flush()
+                except IntegrityError:
+                    refund_tx = None
+                if refund_tx is not None:
                     account = await session.get(ClubAccount, buyer.id)
                     if account is None:
-                        account = ClubAccount(user_id=buyer.id, balance=0, lifetime_earned=0)
-                        session.add(account)
-                        await session.flush()
-                    refund_points = int(order.dcp_spent)
-                    account.balance = int(account.balance or 0) + refund_points
-                    session.add(ClubTransaction(user_id=buyer.id, event_key=refund_key, kind="refund", amount=refund_points,
-                        balance_after=account.balance, reason=f"Возврат DCP за отклонённый заказ DSS-{order.id:06d}"))
+                        try:
+                            async with session.begin_nested():
+                                session.add(ClubAccount(user_id=buyer.id, balance=0, lifetime_earned=0))
+                                await session.flush()
+                        except IntegrityError:
+                            pass
+                    await session.execute(
+                        update(ClubAccount)
+                        .where(ClubAccount.user_id == buyer.id)
+                        .values(balance=ClubAccount.balance + refund_points)
+                    )
+                    account = await session.get(ClubAccount, buyer.id)
+                    refund_tx.balance_after = int(account.balance or 0)
                     notifications.append((buyer.id, f"↩️ DSS CLUB: возвращено {refund_points} DCP за отклонённый заказ."))
         if new_status == "completed":
             if buyer:
