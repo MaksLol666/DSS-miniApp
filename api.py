@@ -1608,6 +1608,8 @@ async def _ensure_season(session, now: datetime | None = None):
     now = now or datetime.utcnow()
     season_config = (await _club_config(session)).get("season", {})
     first_start = datetime.fromisoformat(season_config.get("first_start", SEASON_FIRST_START.isoformat()))
+    if first_start.tzinfo is not None:
+        first_start = first_start.astimezone(timezone.utc).replace(tzinfo=None)
     season_length = max(1, int(season_config.get("length_days", SEASON_LENGTH_DAYS)))
     first_end = first_start + timedelta(days=season_length)
     first = await session.get(ClubSeason, 1)
@@ -2125,7 +2127,10 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
         season["title"] = str(season.get("title", "Season 01 · Новый год"))[:96]
         season["title_prefix"] = str(season.get("title_prefix", "Season"))[:40]
         try:
-            datetime.fromisoformat(str(season.get("first_start", SEASON_FIRST_START.isoformat())))
+            first_start = datetime.fromisoformat(str(season.get("first_start", SEASON_FIRST_START.isoformat())))
+            if first_start.tzinfo is not None:
+                first_start = first_start.astimezone(timezone.utc).replace(tzinfo=None)
+            season["first_start"] = first_start.isoformat()
         except ValueError:
             raise HTTPException(400, "Дата старта сезона должна быть в формате YYYY-MM-DDTHH:MM:SS.")
         for field in ("personal_rewards", "top_rewards"):
