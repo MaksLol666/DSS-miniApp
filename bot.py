@@ -395,6 +395,15 @@ def _register_handlers(dp: Dispatcher) -> None:
             elif action == "unban":
                 u.is_banned = False
             elif action == "reset":
+                pending_order = (await session.execute(
+                    select(Order.id).where(
+                        Order.user_id == uid,
+                        Order.status.in_(("accepted", "assembling", "assembled", "in_transit")),
+                    ).limit(1)
+                )).first()
+                if pending_order:
+                    await message.answer("⚠️ Нельзя сбросить статистику, пока у пользователя есть незавершённый заказ.")
+                    return
                 u.balance = 0
                 u.referrals_count = 0
                 u.next_bonus_at = 10
