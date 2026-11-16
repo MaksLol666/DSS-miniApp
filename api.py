@@ -908,18 +908,26 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
     if data.delivery_type == "cdek" and not (data.delivery_name and data.delivery_phone and data.delivery_address and len(data.delivery_name.strip()) >= 3 and len(data.delivery_address.strip()) >= 5):
         raise HTTPException(400, "Заполни ФИО, телефон и адрес доставки.")
     async with SessionLocal() as session:
-        rows = (await session.execute(select(CartItem, Product).join(Product, CartItem.product_id == Product.id).where(CartItem.user_id == user["id"]).order_by(CartItem.id))).all()
-        if not rows:
-            raise HTTPException(400, "Корзина пуста.")
-        if any(bool(cart_item.reserved) for cart_item, _product in rows):
-            raise HTTPException(409, "Оформление этой корзины уже выполняется. Обнови страницу через несколько секунд.")
         checkout_claim = await session.execute(
             update(CartItem)
             .where(CartItem.user_id == user["id"], CartItem.reserved.is_(False))
             .values(reserved=True)
         )
-        if checkout_claim.rowcount != len(rows):
-            raise HTTPException(409, "Корзина уже изменилась или оформляется в другом запросе. Обнови её.")
+        if checkout_claim.rowcount == 0:
+            has_cart = (await session.execute(
+                select(CartItem.id).where(CartItem.user_id == user["id"]).limit(1)
+            )).first()
+            if not has_cart:
+                raise HTTPException(400, "Корзина пуста.")
+            raise HTTPException(409, "Оформление этой корзины уже выполняется. Обнови страницу через несколько секунд.")
+        rows = (await session.execute(
+            select(CartItem, Product)
+            .join(Product, CartItem.product_id == Product.id)
+            .where(CartItem.user_id == user["id"])
+            .order_by(CartItem.id)
+        )).all()
+        if not rows or any(bool(cart_item.reserved) is False for cart_item, _product in rows):
+            raise HTTPException(409, "Корзина изменилась во время оформления. Обнови её.")
         for cart_item, p in rows:
             await _ensure_product_released(session, p, user["id"])
             requested = int(cart_item.quantity or 1)
