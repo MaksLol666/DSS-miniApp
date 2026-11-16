@@ -1647,17 +1647,21 @@ async def club_activities(user: dict = Depends(current_user)):
                             "referrals": metrics["referrals"]}.get(req_type, req_value)
             if req_type != "none" and metric_value < req_value:
                 continue
-            owned = (await session.execute(select(ClubUserCosmetic.id).where(
-                ClubUserCosmetic.user_id == uid, ClubUserCosmetic.cosmetic_key == cosmetic.key
-            ))).first()
-            if owned:
+            try:
+                async with session.begin_nested():
+                    session.add(ClubUserCosmetic(user_id=uid, cosmetic_key=cosmetic.key, granted_by=None))
+                    await session.flush()
+            except IntegrityError:
+                # Another request already granted this cosmetic to the user.
                 continue
             minted = await session.execute(update(ClubCosmetic).where(
                 ClubCosmetic.key == cosmetic.key,
                 ((ClubCosmetic.max_supply == 0) | (ClubCosmetic.issued_count < ClubCosmetic.max_supply))
             ).values(issued_count=ClubCosmetic.issued_count + 1))
-            if minted.rowcount:
-                session.add(ClubUserCosmetic(user_id=uid, cosmetic_key=cosmetic.key, granted_by=None))
+            if minted.rowcount != 1:
+                await session.execute(delete(ClubUserCosmetic).where(
+                    ClubUserCosmetic.user_id == uid, ClubUserCosmetic.cosmetic_key == cosmetic.key
+                ))
         await session.flush()
         cosmetics = (await session.execute(
             select(ClubCosmetic)
