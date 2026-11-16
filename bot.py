@@ -461,18 +461,34 @@ def _register_handlers(dp: Dispatcher) -> None:
             await callback.message.answer(f"Введи данные товара #{pid} одной строкой:\nБренд | вариант/вкус | цена продажи | количество | закупка за 1 шт.\n\nПример: Brand | Mint | 500 | 12 | 250\nЧтобы не менять закупочную цену, используй старый формат из 4 полей.")
         elif action == "delete":
             pid = int(data[2])
+            blocked = False
             async with SessionLocal() as session:
                 p = await session.get(Product, pid)
                 if p:
-                    used = (await session.execute(select(OrderItem.id).where(OrderItem.product_id == pid).limit(1))).first()
-                    if used:
-                        p.stock_qty = 0
-                        p.in_stock = False
+                    pending = (await session.execute(
+                        select(OrderItem.id)
+                        .join(Order, Order.id == OrderItem.order_id)
+                        .where(
+                            OrderItem.product_id == pid,
+                            Order.status.in_(("accepted", "assembling", "assembled", "in_transit")),
+                        )
+                        .limit(1)
+                    )).first()
+                    if pending:
+                        blocked = True
                     else:
-                        await session.execute(delete(CartItem).where(CartItem.product_id == pid))
-                        await session.delete(p)
-                    await session.commit()
-            await callback.message.answer(f"🗑 Товар #{pid} удалён или скрыт из каталога.")
+                        used = (await session.execute(select(OrderItem.id).where(OrderItem.product_id == pid).limit(1))).first()
+                        if used:
+                            p.stock_qty = 0
+                            p.in_stock = False
+                        else:
+                            await session.execute(delete(CartItem).where(CartItem.product_id == pid))
+                            await session.delete(p)
+                        await session.commit()
+            if blocked:
+                await callback.message.answer(f"⚠️ Нельзя скрыть товар #{pid}, пока по нему есть незавершённый заказ.")
+            else:
+                await callback.message.answer(f"🗑 Товар #{pid} удалён или скрыт из каталога.")
         elif action == "wipe" and data[2] == "yes":
             async with SessionLocal() as session:
                 users = (await session.execute(select(User).where(User.id != ADMIN_ID))).scalars().all()
