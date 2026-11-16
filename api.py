@@ -766,14 +766,26 @@ async def cart_add(data: ProductId, user: dict = Depends(current_user)):
 @app.post("/api/cart/quantity")
 async def cart_set_quantity(data: CartQuantityInput, user: dict = Depends(current_user)):
     async with SessionLocal() as session:
-        item = (await session.execute(select(CartItem).where(CartItem.user_id == user["id"], CartItem.product_id == data.product_id))).scalar_one_or_none()
+        item = (await session.execute(select(CartItem).where(
+            CartItem.user_id == user["id"], CartItem.product_id == data.product_id
+        ))).scalar_one_or_none()
         if not item:
             raise HTTPException(404, "Товар не найден в корзине.")
         product = await session.get(Product, data.product_id)
         if not product or not product.in_stock or data.quantity > int(product.stock_qty or 0):
             raise HTTPException(409, f"Доступно не больше {int(product.stock_qty or 0) if product else 0} шт.")
         await _ensure_product_released(session, product, user["id"])
-        item.quantity = data.quantity
+        changed = await session.execute(
+            update(CartItem)
+            .where(
+                CartItem.user_id == user["id"],
+                CartItem.product_id == data.product_id,
+                CartItem.reserved.is_(False),
+            )
+            .values(quantity=data.quantity)
+        )
+        if changed.rowcount != 1:
+            raise HTTPException(409, "Корзина уже оформляется. Попробуй изменить количество после завершения операции.")
         await session.commit()
     return await _cart(user["id"])
 
