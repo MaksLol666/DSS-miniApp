@@ -727,13 +727,39 @@ async def cart_add(data: ProductId, user: dict = Depends(current_user)):
         if not p or not p.in_stock or int(p.stock_qty or 0) <= 0:
             raise HTTPException(409, "Товар больше недоступен.")
         await _ensure_product_released(session, p, user["id"])
-        existing = (await session.execute(select(CartItem).where(CartItem.user_id == user["id"], CartItem.product_id == p.id))).scalar_one_or_none()
+        existing = (await session.execute(select(CartItem).where(
+            CartItem.user_id == user["id"], CartItem.product_id == p.id
+        ))).scalar_one_or_none()
         if existing:
-            if int(existing.quantity or 1) >= int(p.stock_qty or 0):
+            incremented = await session.execute(
+                update(CartItem)
+                .where(
+                    CartItem.user_id == user["id"],
+                    CartItem.product_id == p.id,
+                    CartItem.quantity < int(p.stock_qty or 0),
+                )
+                .values(quantity=CartItem.quantity + 1)
+            )
+            if incremented.rowcount != 1:
                 raise HTTPException(409, f"Максимум в наличии: {p.stock_qty} шт.")
-            existing.quantity = int(existing.quantity or 1) + 1
         else:
-            session.add(CartItem(user_id=user["id"], product_id=p.id, reserved=False, quantity=1))
+            try:
+                async with session.begin_nested():
+                    session.add(CartItem(user_id=user["id"], product_id=p.id, reserved=False, quantity=1))
+                    await session.flush()
+            except IntegrityError:
+                # Another add request created this row at the same time.
+                incremented = await session.execute(
+                    update(CartItem)
+                    .where(
+                        CartItem.user_id == user["id"],
+                        CartItem.product_id == p.id,
+                        CartItem.quantity < int(p.stock_qty or 0),
+                    )
+                    .values(quantity=CartItem.quantity + 1)
+                )
+                if incremented.rowcount != 1:
+                    raise HTTPException(409, f"Максимум в наличии: {p.stock_qty} шт.")
         await session.commit()
     return await _cart(user["id"])
 
