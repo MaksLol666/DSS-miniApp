@@ -247,12 +247,20 @@ async def _migrate_legacy_columns() -> None:
         ("club_monthly_coupons", "notified", "INTEGER DEFAULT 0"),
     ]
     async with engine.begin() as connection:
+        is_postgres = connection.dialect.name == "postgresql"
         for table, column, sql_type in columns:
+            statement = (
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {sql_type}"
+                if is_postgres else
+                f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"
+            )
             try:
-                await connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"))
+                await connection.execute(text(statement))
             except Exception:
-                # SQLite raises when this column already exists; that is expected.
-                pass
+                # SQLite reports duplicate columns without aborting the transaction.
+                # Other database errors must surface instead of being silently ignored.
+                if not connection.dialect.name == "sqlite":
+                    raise
 
 
 async def _monthly_coupon_scheduler():
@@ -1836,8 +1844,8 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
             if not isinstance(level, dict):
                 raise HTTPException(400, "Каждый уровень должен быть объектом.")
             code = str(level.get("code", "")).strip().upper()
-            if not code or code in seen:
-                raise HTTPException(400, "Ключи уровней должны быть уникальными.")
+            if not code or len(code) > 16 or not re.fullmatch(r"[A-Z0-9_]+", code) or code in seen:
+                raise HTTPException(400, "Код уровня должен содержать только латинские буквы, цифры и _, максимум 16 символов; коды должны быть уникальными.")
             seen.add(code)
             level["code"] = code
             level["title"] = str(level.get("title", code))[:48]
