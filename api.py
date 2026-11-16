@@ -1060,18 +1060,36 @@ SEASON_TOP_REWARDS = [
 async def _award_club_dcp(session, user_id: int, amount: int, event_key: str, reason: str) -> int:
     if amount <= 0:
         return 0
-    exists = (await session.execute(select(ClubTransaction.id).where(ClubTransaction.event_key == event_key))).first()
-    if exists:
-        return 0
     account = await session.get(ClubAccount, user_id)
     if account is None:
-        account = ClubAccount(user_id=user_id, balance=0, lifetime_earned=0)
-        session.add(account)
-        await session.flush()
-    account.balance = int(account.balance or 0) + amount
-    account.lifetime_earned = int(account.lifetime_earned or 0) + amount
-    session.add(ClubTransaction(user_id=user_id, event_key=event_key, kind="earn", amount=amount,
-                                balance_after=account.balance, reason=reason))
+        try:
+            async with session.begin_nested():
+                session.add(ClubAccount(user_id=user_id, balance=0, lifetime_earned=0))
+                await session.flush()
+        except IntegrityError:
+            # A parallel request created the account first.
+            pass
+    transaction = ClubTransaction(
+        user_id=user_id, event_key=event_key, kind="earn", amount=amount,
+        balance_after=0, reason=reason
+    )
+    try:
+        async with session.begin_nested():
+            session.add(transaction)
+            await session.flush()
+    except IntegrityError:
+        # The unique event key makes reward delivery idempotent under concurrency.
+        return 0
+    await session.execute(
+        update(ClubAccount)
+        .where(ClubAccount.user_id == user_id)
+        .values(
+            balance=ClubAccount.balance + amount,
+            lifetime_earned=ClubAccount.lifetime_earned + amount,
+        )
+    )
+    account = await session.get(ClubAccount, user_id)
+    transaction.balance_after = int(account.balance or 0)
     return amount
 
 
