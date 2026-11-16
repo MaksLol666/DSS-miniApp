@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          python api.py > /tmp/dss-api.log 2>&1 &
+          python main.py > /tmp/dss-api.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           for i in $(seq 1 30); do
