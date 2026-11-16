@@ -1397,7 +1397,9 @@ async def _sync_club_tasks(session, user_id: int) -> list[str]:
     tasks = (await session.execute(select(ClubTaskConfig).where(ClubTaskConfig.active.is_(True)))).scalars().all()
     level_order = await _club_level_order(session)
     user_level = await _club_user_level_index(session, user_id)
-    tasks = [task for task in tasks if level_order.get(str(task.min_level or "MEMBER").upper(), 0) <= user_level]
+    tasks = [task for task in tasks
+             if str(task.min_level or "MEMBER").upper() in level_order
+             and level_order[str(task.min_level or "MEMBER").upper()] <= user_level]
     for task in tasks:
         start, period_key = _club_period(task, now)
         count = await _club_task_count(session, user_id, task, start)
