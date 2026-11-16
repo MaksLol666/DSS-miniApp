@@ -256,10 +256,9 @@ async def _migrate_legacy_columns() -> None:
             )
             try:
                 await connection.execute(text(statement))
-            except Exception:
-                # SQLite reports duplicate columns without aborting the transaction.
-                # Other database errors must surface instead of being silently ignored.
-                if not connection.dialect.name == "sqlite":
+            except Exception as exc:
+                # Ignore only SQLite's expected duplicate-column error.
+                if connection.dialect.name != "sqlite" or "duplicate column name" not in str(exc).lower():
                     raise
 
 
