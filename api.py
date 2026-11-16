@@ -61,6 +61,8 @@ PRODUCT_UPLOAD_DIR = Path("data/uploads/products").resolve()
 PRODUCT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 REVIEW_UPLOAD_DIR = Path("data/uploads/reviews").resolve()
 REVIEW_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+CLUB_COSMETIC_UPLOAD_DIR = Path("data/uploads/club-cosmetics").resolve()
+CLUB_COSMETIC_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_PRODUCT_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024
 CAPTCHA_EXEMPT = {"/api/health", "/api/auth", "/api/captcha/config", "/api/captcha/status", "/api/captcha/verify"}
@@ -1731,12 +1733,24 @@ async def _sync_club_activity(session, user_id: int) -> list[str]:
 
 async def _ensure_default_club_cosmetics(session):
     defaults = [
-        {"key": "starter_avatar_smoke", "kind": "avatar", "title": "Smoke", "icon": "🌫️", "rarity": "common", "description": "Стартовая клубная аватарка"},
-        {"key": "starter_avatar_ghost", "kind": "avatar", "title": "Ghost", "icon": "👻", "rarity": "common", "description": "Стартовая клубная аватарка"},
-        {"key": "starter_avatar_flame", "kind": "avatar", "title": "Flame", "icon": "🔥", "rarity": "rare", "description": "Стартовая клубная аватарка"},
-        {"key": "starter_frame_violet", "kind": "frame", "title": "Violet Ring", "icon": "✦", "rarity": "common", "description": "Фиолетовая неоновая рамка", "card_accent": "#a78bfa", "card_primary": "#241333"},
-        {"key": "starter_frame_crimson", "kind": "frame", "title": "Crimson Halo", "icon": "⬡", "rarity": "rare", "description": "Алый ореол", "card_accent": "#fb7185", "card_primary": "#2a1118", "card_animation": "orbit"},
-        {"key": "starter_frame_ice", "kind": "frame", "title": "Ice Pulse", "icon": "❄️", "rarity": "rare", "description": "Холодное голубое свечение", "card_accent": "#67e8f9", "card_primary": "#0b2630", "card_animation": "sheen"},
+        {"key": "starter_avatar_smoke", "kind": "avatar", "title": "Smoke", "icon": "🌫️", "rarity": "common", "description": "Устаревшая стартовая аватарка", "active": False},
+        {"key": "starter_avatar_ghost", "kind": "avatar", "title": "Ghost", "icon": "👻", "rarity": "common", "description": "Устаревшая стартовая аватарка", "active": False},
+        {"key": "starter_avatar_flame", "kind": "avatar", "title": "Flame", "icon": "🔥", "rarity": "rare", "description": "Устаревшая стартовая аватарка", "active": False},
+        {"key": "starter_frame_violet", "kind": "frame", "title": "Violet Ring", "icon": "✦", "rarity": "common", "description": "Устаревшая стартовая рамка", "card_accent": "#a78bfa", "card_primary": "#241333", "active": False},
+        {"key": "starter_frame_crimson", "kind": "frame", "title": "Crimson Halo", "icon": "⬡", "rarity": "rare", "description": "Устаревшая стартовая рамка", "card_accent": "#fb7185", "card_primary": "#2a1118", "card_animation": "orbit", "active": False},
+        {"key": "starter_frame_ice", "kind": "frame", "title": "Ice Pulse", "icon": "❄️", "rarity": "rare", "description": "Устаревшая стартовая рамка", "card_accent": "#67e8f9", "card_primary": "#0b2630", "card_animation": "sheen", "active": False},
+        {"key": "rank_member_avatar", "kind": "avatar", "title": "MEMBER · Origin", "icon": "◇", "rarity": "common", "description": "Персональная аватарка ранга MEMBER", "requirement_level": "MEMBER"},
+        {"key": "rank_member_frame", "kind": "frame", "title": "MEMBER · Silver Halo", "icon": "◇", "rarity": "common", "description": "Серебряная рамка ранга MEMBER", "card_accent": "#b8c7ff", "card_primary": "#182038", "requirement_level": "MEMBER"},
+        {"key": "rank_active_avatar", "kind": "avatar", "title": "ACTIVE · Spark", "icon": "✦", "rarity": "common", "description": "Персональная аватарка ранга ACTIVE", "requirement_level": "ACTIVE"},
+        {"key": "rank_active_frame", "kind": "frame", "title": "ACTIVE · Pulse", "icon": "✦", "rarity": "rare", "description": "Зелёная неоновая рамка ранга ACTIVE", "card_accent": "#48ff9b", "card_primary": "#10291e", "card_animation": "pulse", "requirement_level": "ACTIVE"},
+        {"key": "rank_premium_avatar", "kind": "avatar", "title": "PREMIUM · Crown", "icon": "♛", "rarity": "rare", "description": "Персональная аватарка ранга PREMIUM", "requirement_level": "PREMIUM"},
+        {"key": "rank_premium_frame", "kind": "frame", "title": "PREMIUM · Amethyst", "icon": "♛", "rarity": "rare", "description": "Аметистовая рамка ранга PREMIUM", "card_accent": "#d64cff", "card_primary": "#271232", "card_animation": "sheen", "requirement_level": "PREMIUM"},
+        {"key": "rank_vip_avatar", "kind": "avatar", "title": "VIP · Royal", "icon": "👑", "rarity": "epic", "description": "Персональная аватарка ранга VIP", "requirement_level": "VIP"},
+        {"key": "rank_vip_frame", "kind": "frame", "title": "VIP · Gold", "icon": "♛", "rarity": "epic", "description": "Золотая рамка ранга VIP", "card_accent": "#ffc45c", "card_primary": "#352819", "card_animation": "orbit", "requirement_level": "VIP"},
+        {"key": "rank_legend_avatar", "kind": "avatar", "title": "LEGEND · Monarch", "icon": "♜", "rarity": "legendary", "description": "Персональная аватарка ранга LEGEND", "requirement_level": "LEGEND"},
+        {"key": "rank_legend_frame", "kind": "frame", "title": "LEGEND · Crimson", "icon": "♜", "rarity": "legendary", "description": "Багровая рамка ранга LEGEND", "card_accent": "#ff4268", "card_primary": "#35101c", "card_animation": "ember", "requirement_level": "LEGEND"},
+        {"key": "rank_ambassador_avatar", "kind": "avatar", "title": "AMBASSADOR · Sovereign", "icon": "♕", "rarity": "legendary", "description": "Персональная аватарка ранга AMBASSADOR", "requirement_level": "AMBASSADOR"},
+        {"key": "rank_ambassador_frame", "kind": "frame", "title": "AMBASSADOR · Prismatic", "icon": "♕", "rarity": "legendary", "description": "Радужная неоновая рамка ранга AMBASSADOR", "card_accent": "rainbow", "card_primary": "#160d20", "card_animation": "rainbow", "requirement_level": "AMBASSADOR"},
     ]
     for item in defaults:
         if await session.get(ClubCosmetic, item["key"]) is None:
@@ -2286,7 +2300,7 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
         requirement_type = str(data.get("requirement_type", "none"))
         animation = str(data.get("card_animation", "pulse"))
         card_font = str(data.get("card_font", "orbitron"))
-        allowed_animations = ("none", "pulse", "sheen", "aurora", "scan", "shimmer", "orbit", "ember")
+        allowed_animations = ("none", "pulse", "sheen", "aurora", "scan", "shimmer", "orbit", "ember", "rainbow")
         allowed_fonts = ("orbitron", "rajdhani", "exo2", "montserrat", "georgia", "mono")
         if requirement_type not in ("none", "orders", "lifetime_dcp", "referrals") or animation not in allowed_animations or card_font not in allowed_fonts:
             raise HTTPException(400, "Некорректное условие, анимация или шрифт карточки.")
@@ -2301,11 +2315,8 @@ async def admin_club_cosmetic_create(data: dict, user: dict = Depends(admin_user
             if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
                 raise HTTPException(400, "Цвет карточки должен быть #RRGGBB или rainbow.")
             return value
-        image_url = str(data.get("image_url", "")).strip()
-        if image_url and (len(image_url) > 512 or not re.match(r"^https://", image_url, re.IGNORECASE)):
-            raise HTTPException(400, "Ссылка на изображение должна начинаться с https:// и быть не длиннее 512 символов.")
         session.add(ClubCosmetic(key=key, kind=kind, title=title[:96],
-            description=str(data.get("description", ""))[:256], icon=str(data.get("icon", "✦"))[:16], image_url=image_url,
+            description=str(data.get("description", ""))[:256], icon=str(data.get("icon", "✦"))[:16],
             rarity=str(data.get("rarity", "common"))[:16], active=bool(data.get("active", True)),
             card_primary=valid_hex(data.get("card_primary"), "#26133b"),
             card_secondary=valid_hex(data.get("card_secondary"), "#0b0812"),
@@ -2333,11 +2344,6 @@ async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict =
             item.title = title
         if "description" in data:
             item.description = str(data["description"])[:256]
-        if "image_url" in data:
-            image_url = str(data["image_url"] or "").strip()
-            if image_url and (len(image_url) > 512 or not re.match(r"^https://", image_url, re.IGNORECASE)):
-                raise HTTPException(400, "Ссылка на изображение должна начинаться с https:// и быть не длиннее 512 символов.")
-            item.image_url = image_url
         if "icon" in data:
             item.icon = str(data["icon"])[:16]
         if "rarity" in data:
@@ -2351,7 +2357,7 @@ async def admin_club_cosmetic_update(cosmetic_key: str, data: dict, user: dict =
                     raise HTTPException(400, "Цвет карточки должен быть #RRGGBB или rainbow.")
                 setattr(item, field, value.lower() if value.lower() == "rainbow" else value)
         if "card_animation" in data:
-            if data["card_animation"] not in ("none", "pulse", "sheen", "aurora", "scan", "shimmer", "orbit", "ember"):
+            if data["card_animation"] not in ("none", "pulse", "sheen", "aurora", "scan", "shimmer", "orbit", "ember", "rainbow"):
                 raise HTTPException(400, "Неизвестная анимация карточки.")
             item.card_animation = data["card_animation"]
         if "card_font" in data:
@@ -2476,6 +2482,50 @@ async def club_profile(user: dict = Depends(current_user)):
     }
 
 
+@app.post("/api/admin/club/cosmetics/{cosmetic_key}/image")
+async def admin_club_cosmetic_image_upload(
+    cosmetic_key: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(admin_user),
+):
+    if file.content_type not in ALLOWED_PRODUCT_IMAGE_TYPES:
+        raise HTTPException(400, "Поддерживаются только JPG, PNG и WEBP.")
+    content = await file.read(MAX_PRODUCT_IMAGE_SIZE + 1)
+    if not content or len(content) > MAX_PRODUCT_IMAGE_SIZE:
+        raise HTTPException(400, "Изображение должно быть не больше 5 МБ.")
+    try:
+        optimized = optimize_product_image(content)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    async with SessionLocal() as session:
+        item = await session.get(ClubCosmetic, cosmetic_key)
+        if not item:
+            raise HTTPException(404, "Косметика не найдена.")
+        if item.kind != "avatar":
+            raise HTTPException(400, "Загружать изображение можно только для аватарки.")
+        old_url = str(item.image_url or "")
+        filename = secrets.token_hex(12) + ".webp"
+        target = CLUB_COSMETIC_UPLOAD_DIR / filename
+        target.write_bytes(optimized)
+        item.image_url = f"/uploads/club-cosmetics/{filename}"
+        await session.commit()
+    old_name = Path(old_url).name
+    if old_url.startswith("/uploads/club-cosmetics/") and re.fullmatch(r"[a-f0-9]{24}\\.webp", old_name):
+        (CLUB_COSMETIC_UPLOAD_DIR / old_name).unlink(missing_ok=True)
+    return {"ok": True, "image_url": item.image_url}
+
+
+@app.get("/uploads/club-cosmetics/{filename}")
+async def club_cosmetic_image(filename: str):
+    safe_name = Path(filename).name
+    if safe_name != filename or not re.fullmatch(r"[a-f0-9]{24}\\.webp", safe_name):
+        raise HTTPException(404, "Изображение не найдено.")
+    target = CLUB_COSMETIC_UPLOAD_DIR / safe_name
+    if not target.is_file():
+        raise HTTPException(404, "Изображение не найдено.")
+    return FileResponse(target, media_type="image/webp", headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
 @app.get("/api/club/season")
 async def club_season(user: dict = Depends(current_user)):
     uid = user["id"]
@@ -2554,14 +2604,14 @@ async def _public_club_cosmetics(session, user_ids: list[int]) -> dict[int, dict
     if not user_ids:
         return {}
     rows = (await session.execute(
-        select(ClubCosmeticLoadout.user_id, ClubCosmetic.kind, ClubCosmetic.key, ClubCosmetic.title, ClubCosmetic.icon, ClubCosmetic.image_url, ClubCosmetic.card_accent)
+        select(ClubCosmeticLoadout.user_id, ClubCosmetic.kind, ClubCosmetic.key, ClubCosmetic.title, ClubCosmetic.icon, ClubCosmetic.image_url, ClubCosmetic.card_accent, ClubCosmetic.card_primary, ClubCosmetic.card_animation)
         .join(ClubCosmetic, ClubCosmetic.key == ClubCosmeticLoadout.cosmetic_key)
         .where(ClubCosmeticLoadout.user_id.in_(user_ids), ClubCosmetic.active.is_(True),
                ClubCosmetic.kind.in_(("frame", "effect", "badge", "avatar")))
     )).all()
     result: dict[int, dict] = {}
     for row in rows:
-        result.setdefault(int(row.user_id), {})[row.kind] = {"key": row.key, "title": row.title, "icon": row.icon, "image_url": row.image_url, "card_accent": row.card_accent}
+        result.setdefault(int(row.user_id), {})[row.kind] = {"key": row.key, "title": row.title, "icon": row.icon, "image_url": row.image_url, "card_accent": row.card_accent, "card_primary": row.card_primary, "card_animation": row.card_animation}
     return result
 
 
