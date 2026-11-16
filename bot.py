@@ -134,7 +134,14 @@ async def _stats_text() -> str:
         inventory_untracked = (await session.execute(select(func.coalesce(func.sum(Product.stock_qty), 0)).where(Product.stock_qty > 0, Product.cost_price.is_(None)))).scalar() or 0
         sold_cost = (await session.execute(select(func.coalesce(func.sum(OrderItem.cost_price_snapshot * OrderItem.quantity), 0)).join(Order, Order.id == OrderItem.order_id).where(Order.status == "completed", OrderItem.cost_price_snapshot.is_not(None)))).scalar() or 0
         sold_untracked = (await session.execute(select(func.coalesce(func.sum(OrderItem.quantity), 0)).join(Order, Order.id == OrderItem.order_id).where(Order.status == "completed", OrderItem.cost_price_snapshot.is_(None)))).scalar() or 0
-        top_rows = (await session.execute(select(OrderItem.product_id, func.count(OrderItem.id).label("n")).group_by(OrderItem.product_id).order_by(func.count(OrderItem.id).desc()).limit(5))).all()
+        top_rows = (await session.execute(
+            select(OrderItem.product_id, func.sum(OrderItem.quantity).label("n"))
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(Order.status == "completed")
+            .group_by(OrderItem.product_id)
+            .order_by(func.sum(OrderItem.quantity).desc())
+            .limit(5)
+        )).all()
         top = []
         for product_id, count in top_rows:
             p = await session.get(Product, product_id)
