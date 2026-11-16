@@ -1551,7 +1551,7 @@ async def club_activities(user: dict = Depends(current_user)):
         task_data = []
         for task in tasks:
             required_level = str(task.min_level or "MEMBER").upper()
-            task_unlocked = level_order.get(required_level, 0) <= user_level
+            task_unlocked = required_level in level_order and level_order[required_level] <= user_level
             # Secret tasks are not disclosed until the user reaches their required rank.
             if not task_unlocked and bool(task.secret):
                 continue
@@ -1575,7 +1575,7 @@ async def club_activities(user: dict = Depends(current_user)):
         user_level = await _club_user_level_index(session, uid)
         for cosmetic in active_cosmetics:
             required_level = str(cosmetic.requirement_level or "MEMBER").upper()
-            if level_order.get(required_level, 0) > user_level:
+            if required_level not in level_order or level_order[required_level] > user_level:
                 continue
             req_type = cosmetic.requirement_type or "none"
             req_value = int(cosmetic.requirement_value or 0)
@@ -1870,6 +1870,13 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
             if not isinstance(perks, list):
                 raise HTTPException(400, "Привилегии уровня должны быть списком.")
             level["perks"] = [str(x)[:120] for x in perks[:10]]
+        allowed_level_codes = {level["code"] for level in levels}
+        task_level_refs = (await session.execute(select(ClubTaskConfig.min_level))).scalars().all()
+        cosmetic_level_refs = (await session.execute(select(ClubCosmetic.requirement_level))).scalars().all()
+        if any(str(code or "MEMBER").upper() not in allowed_level_codes for code in task_level_refs):
+            raise HTTPException(409, "Сначала переназначь минимальный ранг существующих заданий на уровни, которые останутся в клубе.")
+        if any(str(code or "MEMBER").upper() not in allowed_level_codes for code in cosmetic_level_refs):
+            raise HTTPException(409, "Сначала переназначь минимальный ранг существующей косметики на уровни, которые останутся в клубе.")
         achievements = current.get("achievements", [])
         if not isinstance(achievements, list) or len(achievements) > 100:
             raise HTTPException(400, "Слишком много достижений.")
