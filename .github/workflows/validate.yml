@@ -60,6 +60,41 @@ jobs:
           assert api._promo_matches_item(club_promo, bundle) is False
           print("Promo limits, DCP minimum and club bundle rules passed.")
           PY
+      - name: Test DSS CLUB DCP reward idempotency
+        run: |
+          python - <<'PY'
+          import asyncio
+          from sqlalchemy import select, func
+          from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+          import api
+          from database.models import Base, User, ClubAccount, ClubTransaction
+
+          async def main():
+              engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+              async with engine.begin() as connection:
+                  await connection.run_sync(Base.metadata.create_all)
+              sessions = async_sessionmaker(engine, expire_on_commit=False)
+              async with sessions() as session:
+                  session.add(User(id=987654321, username="ci-test"))
+                  await session.commit()
+              async with sessions() as session:
+                  awarded = await api._award_club_dcp(session, 987654321, 125, "ci:dcp:once", "CI idempotency test")
+                  assert awarded == 125
+                  await session.commit()
+              async with sessions() as session:
+                  duplicate = await api._award_club_dcp(session, 987654321, 125, "ci:dcp:once", "CI duplicate test")
+                  assert duplicate == 0
+                  account = await session.get(ClubAccount, 987654321)
+                  transactions = (await session.execute(
+                      select(func.count(ClubTransaction.id)).where(ClubTransaction.event_key == "ci:dcp:once")
+                  )).scalar_one()
+                  assert account.balance == 125 and account.lifetime_earned == 125
+                  assert transactions == 1
+              await engine.dispose()
+
+          asyncio.run(main())
+          print("DCP reward idempotency and ledger balance checks passed.")
+          PY
       - name: Test legacy SQLite cart migration
         run: |
           python - <<'PY'
