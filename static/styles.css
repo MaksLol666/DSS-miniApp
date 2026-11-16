@@ -411,3 +411,70 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
 .profile-avatar.avatar-frame-pulse:before{animation:dss-avatar-pulse 2.8s ease-in-out infinite}
 
 .club-avatar-glyph-preview{width:104px;height:104px;display:grid;place-items:center;border-radius:50%;border:3px solid #a78bfa;background:radial-gradient(circle at 30% 25%,#49346a,#15101f 72%);font-size:44px;box-shadow:0 0 22px #a855f766}
+
+
+/* Ambassador membership: royal gold body with prismatic neon identity. */
+.dss-card-ambassador{
+  --club-accent:#f4d38a!important;
+  --club-glow:rgba(255,205,105,.62)!important;
+  border:1px solid #f5d58f!important;
+  background:
+    radial-gradient(ellipse at 10% 100%,rgba(255,55,132,.18),transparent 36%),
+    radial-gradient(ellipse at 90% 0%,rgba(100,82,255,.22),transparent 38%),
+    linear-gradient(135deg,#3b2b18 0%,#17131a 42%,#090a12 100%)!important;
+  box-shadow:0 0 15px rgba(255,206,112,.48),0 0 38px rgba(190,117,255,.24),inset 0 0 35px rgba(255,214,140,.1)!important;
+}
+.dss-card-ambassador .dss-card-top,
+.dss-card-ambassador .dss-card-kicker,
+.dss-card-ambassador .dss-card-title,
+.dss-card-ambassador .dss-card-balance small,
+.dss-card-ambassador .dss-card-status,
+.dss-card-ambassador .dss-card-footer b{color:#f7d994!important;text-shadow:0 0 12px rgba(255,211,130,.55)}
+.dss-card-ambassador .dss-card-level{
+  background:linear-gradient(90deg,#ff5b8a 0%,#ffbd62 18%,#fff18a 34%,#63f0b0 51%,#69c8ff 68%,#b18aff 84%,#ff78d2 100%);
+  background-size:220% 100%;
+  background-clip:text;
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 10px rgba(222,157,255,.38));
+  animation:ambassador-spectrum 7s linear infinite;
+}
+.dss-card-ambassador .dss-card-crest-wrap{
+  border-color:#e8c77f;
+  background:linear-gradient(145deg,#77552b,#211a17 72%);
+  box-shadow:inset 0 0 22px rgba(255,210,125,.28),0 0 22px rgba(255,205,105,.38),0 0 34px rgba(167,108,255,.2);
+}
+.dss-card-ambassador .dss-crest{color:#f5d48d;filter:drop-shadow(0 0 8px #f5d48d99)}
+.dss-card-ambassador .dss-card-ornament{stroke:#e9cc91;opacity:.42}
+.dss-card-ambassador .dss-card-progress>div{background:linear-gradient(90deg,#ff668d,#ffc56b,#fff18a,#68eab6,#72caff,#b48bff);background-size:220% 100%;animation:ambassador-spectrum 7s linear infinite}
+@keyframes ambassador-spectrum{to{background-position:220% 0}}
+
+/* Prismatic frame reserved for the AMBASSADOR rank. */
+.profile-avatar.avatar-frame-rainbow{
+  border:3px solid transparent!important;
+  background:linear-gradient(#120d1c,#120d1c) padding-box,conic-gradient(#ff456d,#ffb84c,#fff36a,#50e79b,#50cfff,#9272ff,#ee68d5,#ff456d) border-box!important;
+  box-shadow:0 0 0 2px #17101f,0 0 15px rgba(255,87,177,.6),0 0 25px rgba(89,173,255,.34)!important;
+  animation:avatar-spectrum 6s linear infinite;
+}
+.profile-avatar.avatar-frame-rainbow:before{
+  inset:-9px!important;
+  border:2px solid transparent!important;
+  background:conic-gradient(#ff456d,#ffb84c,#fff36a,#50e79b,#50cfff,#9272ff,#ee68d5,#ff456d) border-box;
+  -webkit-mask:linear-gradient(#fff 0 0) padding-box,linear-gradient(#fff 0 0);
+  -webkit-mask-composite:xor;
+  mask-composite:exclude;
+  border-radius:50%;
+}
+@keyframes avatar-spectrum{to{filter:hue-rotate(360deg)}}
+
+/* Actual leaderboard place is shown beside each member portrait. */
+.leader-item{display:flex;align-items:center;gap:10px}
+.leader-rank{flex:0 0 25px;text-align:center;font-size:12px;font-weight:950;color:#e7c987;text-shadow:0 0 10px #e5bd6b55}
+.leader-avatar{width:46px!important;height:46px!important;flex:0 0 46px!important;border-radius:50%!important}
+.leader-avatar .profile-avatar-glyph{font-size:25px}
+.season-rank-user{display:flex;align-items:center;gap:9px;min-height:46px}
+.season-rank-avatar{width:34px!important;height:34px!important;flex:0 0 34px!important}
+.season-rank-avatar .profile-avatar-glyph{font-size:19px}
+.season-rank-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.season-rank-user .season-rank-number{flex:0 0 25px}
+@media(prefers-reduced-motion:reduce){.dss-card-ambassador .dss-card-level,.dss-card-ambassador .dss-card-progress>div,.profile-avatar.avatar-frame-rainbow{animation:none!important}}
