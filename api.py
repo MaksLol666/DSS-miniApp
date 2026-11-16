@@ -1568,8 +1568,14 @@ async def _finalize_expired_seasons(session, now: datetime):
                         ClubSeasonReward.reward_key == reward["key"]
                     ))).first()
                     if not exists:
-                        session.add(ClubSeasonReward(user_id=row.user_id, season_number=season.season_number,
-                            reward_key=reward["key"], title=reward["title"]))
+                        try:
+                            async with session.begin_nested():
+                                session.add(ClubSeasonReward(user_id=row.user_id, season_number=season.season_number,
+                                    reward_key=reward["key"], title=reward["title"]))
+                                await session.flush()
+                        except IntegrityError:
+                            # Another request finalized this personal reward first.
+                            pass
         for rank, row in enumerate(ranking, 1):
             if rank > 50:
                 break
@@ -1581,8 +1587,14 @@ async def _finalize_expired_seasons(session, now: datetime):
                     ClubSeasonReward.reward_key == reward["key"]
                 ))).first()
                 if not exists:
-                    session.add(ClubSeasonReward(user_id=row.user_id, season_number=season.season_number,
-                        reward_key=reward["key"], title=reward["title"], rank=rank))
+                    try:
+                        async with session.begin_nested():
+                            session.add(ClubSeasonReward(user_id=row.user_id, season_number=season.season_number,
+                                reward_key=reward["key"], title=reward["title"], rank=rank))
+                            await session.flush()
+                    except IntegrityError:
+                        # Another request finalized this leaderboard reward first.
+                        pass
     await session.flush()
 
 
