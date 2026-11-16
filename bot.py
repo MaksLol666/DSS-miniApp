@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import json
+import re
 import secrets
 from pathlib import Path
 from datetime import datetime
@@ -327,7 +328,9 @@ def _register_handlers(dp: Dispatcher) -> None:
             amount = float(amount_s.replace(",", "."))
             owner_id = int(tail[0]) if tail else 0
             max_uses = int(tail[1]) if len(tail) > 1 else 1
-            if kind not in ("fixed", "percent") or amount <= 0 or (kind == "percent" and amount > 100) or owner_id < 0 or max_uses < 1:
+            if (kind not in ("fixed", "percent") or amount <= 0 or amount > 10000000
+                    or (kind == "percent" and amount > 100) or owner_id < 0
+                    or max_uses < 1 or max_uses > 1000000):
                 raise ValueError()
             async with SessionLocal() as session:
                 if code.upper() == "AUTO":
@@ -335,8 +338,8 @@ def _register_handlers(dp: Dispatcher) -> None:
                     result_code = await _create_promo(session, owner_id, kind, amount, max_uses, "admin")
                 else:
                     result_code = code.upper()
-                    if len(result_code) > 16 or await session.get(Promocode, result_code):
-                        await message.answer("Такой код уже существует или превышает 16 символов.")
+                    if not re.fullmatch(r"[A-Z0-9_-]{1,16}", result_code) or await session.get(Promocode, result_code):
+                        await message.answer("Код должен содержать латиницу, цифры, дефис или подчёркивание (до 16 символов) и быть уникальным.")
                         return
                     session.add(Promocode(code=result_code, owner_id=owner_id, kind=kind, amount=amount, used=False, created_by="admin", max_uses=max_uses, used_count=0))
                 await session.commit()
