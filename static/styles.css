@@ -580,3 +580,235 @@ body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opa
   .shell:has(.dss-card-ambassador) .season-status,
   .shell:has(.dss-card-ambassador) .season-score-token{animation:none}
 }
+
+/* GLOBAL DSS CLUB THEME — AMBASSADOR.
+   The active rank is applied to <html data-club-theme="..."> by applyClubTheme().
+   This theme intentionally covers the complete Mini App, not only DSS CLUB. */
+:root[data-club-theme="ambassador"]{
+  --neon:#f2d28b;
+  --neon-soft:rgba(255,190,112,.14);
+  --neon-glow:rgba(255,184,91,.30);
+  --purple:#e9c77e;
+  --purple-dark:#382817;
+  --mint:#a9f4d0;
+  --line:#59452f;
+  --panel:#19151a;
+  --surface:linear-gradient(145deg,rgba(40,29,26,.97),rgba(16,13,19,.98));
+  --ambassador-spectrum:linear-gradient(105deg,#ff668d 0%,#ffc46b 18%,#fff18b 34%,#68eab6 51%,#72caff 68%,#b48bff 84%,#ff72c9 100%);
+  --ambassador-spectrum-soft:linear-gradient(120deg,rgba(255,102,141,.16),rgba(255,196,107,.13),rgba(255,241,139,.10),rgba(104,234,182,.12),rgba(114,202,255,.14),rgba(180,139,255,.16),rgba(255,114,201,.13));
+}
+:root[data-club-theme="ambassador"] body{
+  background:
+    radial-gradient(ellipse at 5% 0%,rgba(255,190,112,.17),transparent 32%),
+    radial-gradient(ellipse at 95% 18%,rgba(168,115,255,.17),transparent 34%),
+    radial-gradient(ellipse at 50% 100%,rgba(255,91,153,.08),transparent 45%),
+    linear-gradient(180deg,#100d13 0%,#0b0a11 52%,#100c14 100%);
+}
+:root[data-club-theme="ambassador"] body:before{
+  opacity:.24;
+  background-image:
+    linear-gradient(rgba(255,211,143,.055) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,211,143,.055) 1px,transparent 1px);
+}
+:root[data-club-theme="ambassador"] .logo{
+  border:1px solid #f7dda0;
+  background:linear-gradient(135deg,#fff0b5 0%,#e6b85e 38%,#a66b37 72%,#633c28 100%);
+  color:#24160e;
+  box-shadow:0 0 14px rgba(255,204,117,.58),0 0 32px rgba(182,120,255,.25),inset 0 0 12px #fff9;
+}
+:root[data-club-theme="ambassador"] .brand-name,
+:root[data-club-theme="ambassador"] .section-title{
+  text-shadow:0 0 18px rgba(255,204,117,.18);
+}
+:root[data-club-theme="ambassador"] .user-chip{
+  border-color:rgba(244,207,139,.55);
+  background:linear-gradient(115deg,rgba(82,53,34,.78),rgba(24,18,25,.96));
+  box-shadow:0 5px 20px #0007,0 0 16px rgba(255,190,112,.10);
+}
+:root[data-club-theme="ambassador"] .avatar,
+:root[data-club-theme="ambassador"] .profile-avatar{
+  background:linear-gradient(135deg,#ffe9a8,#d8a85d 46%,#8f5b9e);
+  color:#21151b;
+  box-shadow:0 0 18px rgba(255,190,112,.35),0 0 28px rgba(166,126,255,.16);
+}
+:root[data-club-theme="ambassador"] .hero{
+  border-color:transparent;
+  background:
+    linear-gradient(135deg,#241b20,#17131b 58%,#17111b) padding-box,
+    var(--ambassador-spectrum) border-box;
+  box-shadow:0 14px 42px #0007,0 0 25px rgba(185,130,255,.13),inset 0 0 35px rgba(255,210,139,.07);
+}
+:root[data-club-theme="ambassador"] .hero:after{
+  border-color:rgba(255,220,157,.58);
+  box-shadow:0 0 0 20px rgba(255,190,112,.08),0 0 0 42px rgba(170,124,255,.07),0 0 32px rgba(255,190,112,.25);
+}
+:root[data-club-theme="ambassador"] .eyebrow,
+:root[data-club-theme="ambassador"] .hero-note{
+  color:#f4d99f;
+  text-shadow:0 0 12px rgba(255,195,111,.34);
+}
+:root[data-club-theme="ambassador"] .hero h1{
+  background:var(--ambassador-spectrum);
+  background-size:220% 100%;
+  background-clip:text;
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  animation:ambassador-spectrum 9s linear infinite;
+  filter:drop-shadow(0 0 13px rgba(190,139,255,.18));
+}
+:root[data-club-theme="ambassador"] .hero p{color:#d1c3d1}
+:root[data-club-theme="ambassador"] .ghost-button,
+:root[data-club-theme="ambassador"] .chip.active,
+:root[data-club-theme="ambassador"] .tab.active,
+:root[data-club-theme="ambassador"] .nav-button.active{
+  border-color:#e8c77e;
+  background:linear-gradient(115deg,rgba(255,102,141,.16),rgba(255,196,107,.15),rgba(104,234,182,.12),rgba(114,202,255,.15),rgba(180,139,255,.17));
+  color:#fff2d3;
+  box-shadow:0 0 16px rgba(255,190,112,.16),inset 0 0 14px rgba(255,220,160,.06);
+}
+:root[data-club-theme="ambassador"] .mini-link{color:#e9c77e;text-shadow:0 0 10px rgba(255,190,112,.18)}
+:root[data-club-theme="ambassador"] .search,
+:root[data-club-theme="ambassador"] .field{
+  border-color:#57432f;
+  background:linear-gradient(145deg,rgba(28,21,25,.98),rgba(13,12,18,.98));
+}
+:root[data-club-theme="ambassador"] .search:focus,
+:root[data-club-theme="ambassador"] .field:focus{
+  border-color:#e9c77e;
+  box-shadow:0 0 0 2px rgba(255,196,107,.12),0 0 18px rgba(255,190,112,.2);
+}
+:root[data-club-theme="ambassador"] .chip,
+:root[data-club-theme="ambassador"] .tab{
+  border-color:#4c3b30;
+  background:linear-gradient(145deg,#21191d,#131119);
+}
+:root[data-club-theme="ambassador"] .product-card,
+:root[data-club-theme="ambassador"] .card,
+:root[data-club-theme="ambassador"] .list-card,
+:root[data-club-theme="ambassador"] .admin-product,
+:root[data-club-theme="ambassador"] .metric,
+:root[data-club-theme="ambassador"] .delivery-option{
+  border-color:#51402f;
+  background:linear-gradient(145deg,rgba(37,27,27,.97),rgba(15,13,19,.98));
+  box-shadow:0 10px 28px #0005,inset 0 1px rgba(255,239,205,.035);
+}
+:root[data-club-theme="ambassador"] .product-card:active,
+:root[data-club-theme="ambassador"] .list-card:active{
+  border-color:#d8b76f;
+}
+:root[data-club-theme="ambassador"] .product-art{
+  background:
+    radial-gradient(ellipse at 50% 35%,rgba(255,190,112,.19),transparent 58%),
+    radial-gradient(ellipse at 90% 10%,rgba(160,118,255,.16),transparent 45%),
+    linear-gradient(145deg,#2b2024,#14121a);
+}
+:root[data-club-theme="ambassador"] .product-art:before{
+  border-color:rgba(255,220,157,.25);
+  box-shadow:0 0 0 16px rgba(255,190,112,.045),0 0 28px rgba(175,126,255,.12);
+}
+:root[data-club-theme="ambassador"] .product-no{color:#f1d18f}
+:root[data-club-theme="ambassador"] .add-button,
+:root[data-club-theme="ambassador"] .primary{
+  background:linear-gradient(110deg,#ff9b9f 0%,#f5c875 27%,#f7e79a 43%,#9ce4c2 61%,#9bdcff 78%,#c7a5ff 100%);
+  color:#21151b;
+  box-shadow:0 8px 24px rgba(255,190,112,.19),0 0 18px rgba(174,129,255,.12);
+}
+:root[data-club-theme="ambassador"] .secondary,
+:root[data-club-theme="ambassador"] .small-button{
+  border-color:#665039;
+  background:linear-gradient(135deg,#2c2224,#19151d);
+  color:#f0dfc1;
+}
+:root[data-club-theme="ambassador"] .delivery-option.selected{
+  border-color:#e8c77e;
+  background:linear-gradient(115deg,rgba(255,102,141,.11),rgba(255,196,107,.12),rgba(104,234,182,.09),rgba(180,139,255,.12));
+}
+:root[data-club-theme="ambassador"] .delivery-option input{accent-color:#e8c77e}
+:root[data-club-theme="ambassador"] .item-thumb{
+  border-color:#6b5035;
+  background:radial-gradient(circle,rgba(255,190,112,.2),transparent),linear-gradient(145deg,#2a2024,#17131b);
+}
+:root[data-club-theme="ambassador"] .discount{color:#a9f4d0}
+:root[data-club-theme="ambassador"] .metric-value{color:#fff0d1;text-shadow:0 0 12px rgba(255,190,112,.13)}
+:root[data-club-theme="ambassador"] .bottom-nav{
+  border-top-color:#5b4632;
+  background:linear-gradient(100deg,rgba(24,17,22,.97),rgba(22,17,26,.97),rgba(17,15,23,.98));
+  box-shadow:0 -8px 30px rgba(0,0,0,.28),0 0 22px rgba(255,190,112,.06);
+}
+:root[data-club-theme="ambassador"] .nav-button.active{
+  border:1px solid rgba(239,204,135,.55);
+}
+:root[data-club-theme="ambassador"] .nav-badge{
+  background:var(--ambassador-spectrum);
+  color:#20151a;
+}
+:root[data-club-theme="ambassador"] .empty{
+  border-color:#66513b;
+  background:linear-gradient(145deg,rgba(39,28,28,.92),rgba(17,14,21,.96));
+}
+:root[data-club-theme="ambassador"] .toast{
+  border-color:#80603d;
+  background:linear-gradient(120deg,#34251f,#201923);
+  color:#fff0d1;
+}
+:root[data-club-theme="ambassador"] .modal{
+  border-color:#8a6945;
+  background:linear-gradient(145deg,#2a2022,#15131c);
+}
+:root[data-club-theme="ambassador"] .spinner{
+  border-top-color:#e9c77e;
+}
+:root[data-club-theme="ambassador"] .club-hero,
+:root[data-club-theme="ambassador"] .club-monthly-perk,
+:root[data-club-theme="ambassador"] .club-title-card,
+:root[data-club-theme="ambassador"] .season-panel{
+  border-color:transparent;
+  background:
+    linear-gradient(145deg,rgba(35,26,29,.97),rgba(17,14,22,.98)) padding-box,
+    var(--ambassador-spectrum) border-box;
+  box-shadow:0 0 18px rgba(184,120,255,.15),0 12px 34px rgba(0,0,0,.32);
+}
+:root[data-club-theme="ambassador"] .club-hero-seal,
+:root[data-club-theme="ambassador"] .club-title-art{
+  border-color:rgba(255,230,178,.7);
+  background:var(--ambassador-spectrum-soft),linear-gradient(145deg,#2d2027,#17131d);
+  box-shadow:inset 0 0 22px rgba(190,140,255,.18),0 0 18px rgba(255,190,112,.12);
+}
+:root[data-club-theme="ambassador"] .club-hero-seal span,
+:root[data-club-theme="ambassador"] .club-title-art span,
+:root[data-club-theme="ambassador"] .club-title-info>b,
+:root[data-club-theme="ambassador"] .club-perk-heading,
+:root[data-club-theme="ambassador"] .club-monthly-perk .eyebrow,
+:root[data-club-theme="ambassador"] .season-edition,
+:root[data-club-theme="ambassador"] .season-status,
+:root[data-club-theme="ambassador"] .season-score-token{
+  background:var(--ambassador-spectrum);
+  background-size:220% 100%;
+  background-clip:text;
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  animation:ambassador-spectrum 8s linear infinite;
+  filter:drop-shadow(0 0 8px rgba(177,137,255,.3));
+}
+:root[data-club-theme="ambassador"] .club-level,
+:root[data-club-theme="ambassador"] .season-reward{
+  border-color:#5a4639;
+  background:linear-gradient(145deg,rgba(42,30,31,.94),rgba(19,16,23,.98));
+}
+:root[data-club-theme="ambassador"] .club-level.is-unlocked,
+:root[data-club-theme="ambassador"] .season-reward.is-unlocked{
+  border-color:#d4b36f;
+  background:var(--ambassador-spectrum-soft),linear-gradient(145deg,#302326,#19151e);
+  box-shadow:0 0 14px rgba(255,190,112,.12);
+}
+:root[data-club-theme="ambassador"] .club-perk span,
+:root[data-club-theme="ambassador"] .club-monthly-gem,
+:root[data-club-theme="ambassador"] .season-rank-number{
+  color:#e9c77e;
+  text-shadow:0 0 10px rgba(255,190,112,.38);
+}
+@media(prefers-reduced-motion:reduce){
+  :root[data-club-theme="ambassador"] .hero h1,
+  :root[data-club-theme="ambassador"] .club-hero-seal span,
+  :root[data-club-theme="ambassador"] .club-title-art span{animation:none!important}
+}
