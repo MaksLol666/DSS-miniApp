@@ -3184,11 +3184,13 @@ async def admin_stats(period: str = "30d", user: dict = Depends(admin_user)):
     if period not in ("today", "yesterday", "7d", "30d", "all"):
         raise HTTPException(400, "Неизвестный период статистики.")
     now = datetime.utcnow()
+    moscow_now = now + timedelta(hours=3)
+    moscow_day_start = moscow_now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=3)
     if period == "today":
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = moscow_day_start
         end = start + timedelta(days=1)
     elif period == "yesterday":
-        end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = moscow_day_start
         start = end - timedelta(days=1)
     elif period == "7d":
         start, end = now - timedelta(days=7), None
@@ -3250,7 +3252,7 @@ async def admin_stats(period: str = "30d", user: dict = Depends(admin_user)):
             else: entry["cost"] += float(item.cost_price_snapshot) * qty
         top_products = sorted(products.values(), key=lambda x: x["quantity"], reverse=True)[:5]
         top_profit_products = sorted(({"brand": p["brand"], "flavor": p["flavor"], "profit": round(p["revenue"] - p["cost"], 2), "cost_tracked": p["cost_tracked"]} for p in products.values()), key=lambda x: x["profit"], reverse=True)[:5]
-        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_start = moscow_day_start
         week_start = now - timedelta(days=7)
         day_orders = (await session.execute(
             select(Order).outerjoin(completed_times, completed_times.c.order_id == Order.id)
