@@ -2132,9 +2132,7 @@ async def club_profile(user: dict = Depends(current_user)):
         balance = int(account.balance or 0) if account else 0
         lifetime = int(account.lifetime_earned or 0) if account else 0
         orders = (await _club_metrics(session, uid))["orders"]
-        referrals = int((await session.execute(select(func.count(User.id)).where(
-            User.referrer_id == uid, User.first_purchase_done.is_(True)
-        ))).scalar() or 0)
+        referrals = (await _club_metrics(session, uid))["referrals"]
         rows = (await session.execute(select(ClubTransaction).where(
             ClubTransaction.user_id == uid
         ).order_by(ClubTransaction.created_at.desc(), ClubTransaction.id.desc()).limit(20))).scalars().all()
