@@ -2541,6 +2541,7 @@ async def club_season(user: dict = Depends(current_user)):
             .where(ClubSeasonPoint.season_number == season.season_number)
             .group_by(User.id, User.username)
         )).all()
+        leaderboard_cosmetics = await _public_club_cosmetics(session, [int(row.id) for row in rows])
         rewards = (await session.execute(select(ClubSeasonReward).where(
             ClubSeasonReward.user_id == uid
         ).order_by(ClubSeasonReward.season_number.desc(), ClubSeasonReward.id.desc()))).scalars().all()
@@ -2565,7 +2566,8 @@ async def club_season(user: dict = Depends(current_user)):
         "days_left": max(0, (season.ends_at - now).days),
         "points": my_points, "rank": my_rank, "participants": len(ranking),
         "leaderboard": [{"position": row["position"], "user_id": row["user_id"],
-                         "username": row["username"], "points": row["points"]} for row in ranking[:50]],
+                         "username": row["username"], "points": row["points"],
+                         "club_cosmetics": leaderboard_cosmetics.get(row["user_id"], {})} for row in ranking[:50]],
         "personal_rewards": [{**reward, "unlocked": my_points >= reward["points"]}
                              for reward in personal_rewards],
         "top_rewards": top_rewards,
