@@ -929,8 +929,23 @@ async def checkout(data: CheckoutInput, user: dict = Depends(current_user)):
             session.add(OrderItem(order_id=order.id, product_id=p.id, price=float(p.price), quantity=quantity,
                 cost_price_snapshot=float(p.cost_price) if p.cost_price is not None else None,
                 brand_snapshot=p.brand, flavor_snapshot=p.flavor))
-            p.stock_qty = max(0, int(p.stock_qty or 0) - quantity)
-            p.in_stock = p.stock_qty > 0
+            stock_update = await session.execute(
+                update(Product)
+                .where(
+                    Product.id == p.id,
+                    Product.in_stock.is_(True),
+                    Product.stock_qty >= quantity,
+                )
+                .values(
+                    stock_qty=Product.stock_qty - quantity,
+                    in_stock=(Product.stock_qty - quantity) > 0,
+                )
+            )
+            if stock_update.rowcount != 1:
+                raise HTTPException(
+                    409,
+                    f"Товар {p.brand} — {p.flavor} только что закончился. Обнови корзину.",
+                )
         await session.execute(delete(CartItem).where(CartItem.user_id == user["id"]))
         await session.execute(delete(CartPromo).where(CartPromo.user_id == user["id"]))
         await session.execute(delete(CartClubRedemption).where(CartClubRedemption.user_id == user["id"]))
