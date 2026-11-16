@@ -1515,12 +1515,14 @@ async def _award_season_points(session, user_id: int, amount: int, event_key: st
     season, active = await _ensure_season(session)
     if not active:
         return 0
-    exists = (await session.execute(select(ClubSeasonPoint.id).where(ClubSeasonPoint.event_key == event_key))).first()
-    if exists:
+    try:
+        async with session.begin_nested():
+            session.add(ClubSeasonPoint(user_id=user_id, season_number=season.season_number,
+                                        event_key=event_key, amount=amount, reason=reason))
+            await session.flush()
+    except IntegrityError:
+        # A unique event key prevents duplicate SP awards from parallel requests.
         return 0
-    session.add(ClubSeasonPoint(user_id=user_id, season_number=season.season_number,
-                                event_key=event_key, amount=amount, reason=reason))
-    await session.flush()
     return amount
 
 
