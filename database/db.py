@@ -124,18 +124,16 @@ async def init_db() -> None:
             await connection.exec_driver_sql(
                 "UPDATE order_items SET quantity = 1 WHERE quantity IS NULL OR quantity < 1"
             )
-            await connection.exec_driver_sql(
-                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1"
-            )
-            await connection.exec_driver_sql(
-                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cost_price_snapshot FLOAT"
-            )
-            await connection.exec_driver_sql(
-                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS brand_snapshot VARCHAR(64)"
-            )
-            await connection.exec_driver_sql(
-                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS flavor_snapshot VARCHAR(64)"
-            )
+            await connection.exec_driver_sql("UPDATE orders SET status = 'accepted' WHERE status = 'pending'")
+            await connection.exec_driver_sql("UPDATE orders SET status = 'completed' WHERE status = 'approved'")
+            await connection.exec_driver_sql("""
+                INSERT INTO order_status_history (order_id, status, changed_by, note)
+                SELECT o.id, o.status, NULL, 'Исторический статус'
+                FROM orders o
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM order_status_history h WHERE h.order_id = o.id
+                )
+            """)
         # Merge legacy duplicate cart rows before enforcing one row per product/user.
         duplicate_groups = await connection.execute(text("""
             SELECT user_id, product_id, MIN(id) AS keep_id, SUM(quantity) AS total_quantity
