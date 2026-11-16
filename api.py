@@ -2097,10 +2097,20 @@ async def admin_club_config_update(data: dict, user: dict = Depends(admin_user))
         allowed_level_codes = {level["code"] for level in levels}
         task_level_refs = (await session.execute(select(ClubTaskConfig.min_level))).scalars().all()
         cosmetic_level_refs = (await session.execute(select(ClubCosmetic.requirement_level))).scalars().all()
+        product_release_refs = (await session.execute(select(Product.id, Product.rank_release_dates))).all()
         if any(str(code or "MEMBER").upper() not in allowed_level_codes for code in task_level_refs):
             raise HTTPException(409, "Сначала переназначь минимальный ранг существующих заданий на уровни, которые останутся в клубе.")
         if any(str(code or "MEMBER").upper() not in allowed_level_codes for code in cosmetic_level_refs):
             raise HTTPException(409, "Сначала переназначь минимальный ранг существующей косметики на уровни, которые останутся в клубе.")
+        for product_id, raw_dates in product_release_refs:
+            try:
+                release_dates = json.loads(raw_dates or "{}")
+            except (TypeError, ValueError):
+                raise HTTPException(409, f"Исправь даты раннего доступа товара #{product_id} перед изменением списка рангов.")
+            if not isinstance(release_dates, dict):
+                raise HTTPException(409, f"Исправь даты раннего доступа товара #{product_id} перед изменением списка рангов.")
+            if any(str(code).upper() not in allowed_level_codes for code in release_dates):
+                raise HTTPException(409, f"Сначала переназначь ранги раннего доступа товара #{product_id} на уровни, которые останутся в клубе.")
         achievements = current.get("achievements", [])
         if not isinstance(achievements, list) or len(achievements) > 100:
             raise HTTPException(400, "Слишком много достижений.")
