@@ -60,6 +60,47 @@ jobs:
           assert api._promo_matches_item(club_promo, bundle) is False
           print("Promo limits, DCP minimum and club bundle rules passed.")
           PY
+      - name: Test legacy SQLite cart migration
+        run: |
+          python - <<'PY'
+          import asyncio
+          import tempfile
+          from pathlib import Path
+          from sqlalchemy import text
+          from sqlalchemy.ext.asyncio import create_async_engine
+          import database.db as db
+
+          async def main():
+              with tempfile.TemporaryDirectory() as directory:
+                  url = f"sqlite+aiosqlite:///{Path(directory) / 'legacy.db'}"
+                  db.DB_URL = url
+                  db.engine = create_async_engine(url, connect_args={"timeout": 30})
+                  async with db.engine.begin() as connection:
+                      await connection.exec_driver_sql("""
+                          CREATE TABLE cart_items (
+                              id INTEGER PRIMARY KEY,
+                              user_id BIGINT NOT NULL,
+                              product_id INTEGER NOT NULL,
+                              reserved BOOLEAN NOT NULL DEFAULT 0,
+                              quantity INTEGER NOT NULL DEFAULT 1
+                          )
+                      """)
+                      await connection.exec_driver_sql(
+                          "INSERT INTO cart_items (id, user_id, product_id, quantity) VALUES (1, 123, 7, 2), (2, 123, 7, 3)"
+                      )
+                  await db.init_db()
+                  async with db.engine.connect() as connection:
+                      rows = (await connection.execute(text(
+                          "SELECT user_id, product_id, quantity FROM cart_items"
+                      ))).all()
+                      assert rows == [(123, 7, 5)], rows
+                      indexes = (await connection.exec_driver_sql("PRAGMA index_list(cart_items)")).fetchall()
+                      assert any(row[1] == "uq_cart_items_user_product" for row in indexes), indexes
+                  await db.engine.dispose()
+
+          asyncio.run(main())
+          print("Legacy duplicate cart rows merge and unique index migration passed.")
+          PY
       - name: Smoke test HTTP routes
         shell: bash
         run: |
