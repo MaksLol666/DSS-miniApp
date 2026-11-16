@@ -14,7 +14,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, W
 
 from sqlalchemy import delete, func, select, update
 
-from config import ADMIN_ID, BOT_TOKEN, MINIAPP_URL, REVIEWS_CHANNEL_ID
+from config import ADMIN_ID, BOT_TOKEN, DELIVERY_PRICE, MINIAPP_URL, REVIEWS_CHANNEL_ID
 from database.db import SessionLocal
 from database.models import User, Product, Category, Order, OrderItem, Promocode, CartPromo, Review
 from image_utils import optimize_product_image
@@ -130,7 +130,13 @@ async def _stats_text() -> str:
         users = (await session.execute(select(func.count(User.id)))).scalar() or 0
         orders = (await session.execute(select(func.count(Order.id)).where(Order.status == "completed"))).scalar() or 0
         pending = (await session.execute(select(func.count(Order.id)).where(Order.status.in_(("accepted", "assembling", "assembled", "in_transit"))))).scalar() or 0
-        revenue = (await session.execute(select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == "completed"))).scalar() or 0
+        revenue_rows = (await session.execute(
+            select(Order.total, Order.delivery_type).where(Order.status == "completed")
+        )).all()
+        revenue = sum(
+            max(0.0, float(total) - (DELIVERY_PRICE if delivery_type == "cdek" else 0.0))
+            for total, delivery_type in revenue_rows
+        )
         products = (await session.execute(select(func.count(Product.id)).where(Product.in_stock.is_(True), Product.stock_qty > 0))).scalar() or 0
         inventory_value = (await session.execute(select(func.coalesce(func.sum(Product.cost_price * Product.stock_qty), 0)).where(Product.cost_price.is_not(None)))).scalar() or 0
         inventory_untracked = (await session.execute(select(func.coalesce(func.sum(Product.stock_qty), 0)).where(Product.stock_qty > 0, Product.cost_price.is_(None)))).scalar() or 0
