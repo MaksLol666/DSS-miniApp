@@ -25,6 +25,41 @@ jobs:
       - run: python -m compileall -q api.py bot.py main.py config.py database
       - run: node --check static/app.js
       - run: python -c "import api; assert any(getattr(r, 'path', None) == '/api/health' for r in api.app.routes); assert any(getattr(r, 'path', None) == '/' for r in api.app.routes); print('API import and route checks passed')"
+      - name: Test DSS promo and club discount calculations
+        run: |
+          python - <<'PY'
+          import api
+
+          items = [{"product_id": 1, "category_id": 1, "category_name": "Жижа", "price": 1000, "quantity": 1}]
+          promo = api.Promocode(
+              code="TEST100", owner_id=0, kind="fixed", amount=100, used=False,
+              created_by="admin", max_uses=1, used_count=0, target_type="all", min_order=0
+          )
+          assert api._totals(items, [promo])["total"] == 900
+          promo.used_count = 1
+          assert api._totals(items, [promo])["total"] == 1000
+
+          club_config = {"economy": {
+              "min_order": 500, "min_product_price": 500, "dcp_per_ruble": 100,
+              "redemption_tiers": [[100, 50]]
+          }}
+          below_minimum = api._club_discount_for_cart(
+              [{"price": 400, "cost_price": 200, "quantity": 1}], 400, club_config
+          )
+          assert below_minimum["available"] is False
+          valid = api._club_discount_for_cart(
+              [{"price": 500, "cost_price": 200, "quantity": 1}], 500, club_config
+          )
+          assert valid["available"] is True and valid["required_points"] == 5000
+
+          club_promo = api.Promocode(
+              code="CLUB50", owner_id=1, kind="fixed", amount=50, used=False,
+              created_by="club", max_uses=1, used_count=0, target_type="all", min_order=0
+          )
+          bundle = {**items[0], "category_name": "Наборы"}
+          assert api._promo_matches_item(club_promo, bundle) is False
+          print("Promo limits, DCP minimum and club bundle rules passed.")
+          PY
       - name: Smoke test HTTP routes
         shell: bash
         run: |
