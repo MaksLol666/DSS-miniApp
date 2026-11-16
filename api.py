@@ -2386,6 +2386,13 @@ async def _set_order_status(order_id: int, new_status: str, actor_id: int | None
             raise HTTPException(400, "Статус «В пути» доступен только для доставки.")
         if new_status == "completed" and order.delivery_type == "cdek" and current != "in_transit":
             raise HTTPException(409, "Для доставки сначала установи статус «В пути».")
+        transition = await session.execute(
+            update(Order)
+            .where(Order.id == order_id, Order.status == current)
+            .values(status=new_status)
+        )
+        if transition.rowcount != 1:
+            raise HTTPException(409, "Статус заказа уже изменён другим действием. Обнови список заказов.")
         items = (await session.execute(select(OrderItem, Product).join(Product, OrderItem.product_id == Product.id).where(OrderItem.order_id == order_id))).all()
         buyer = await session.get(User, order.user_id)
         order.status = new_status
