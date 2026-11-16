@@ -1532,7 +1532,7 @@ async def club_activities(user: dict = Depends(current_user)):
         await _sync_club_achievements(session, uid)
         await _sync_club_tasks(session, uid)
         selected = await session.get(ClubTitleSelection, uid)
-        unlocked = set((await session.execute(select(ClubAchievementUnlock.achievement_key).where(ClubAchievementUnlock.user_id == uid))).scalars().all())
+        unlocked_achievements = set((await session.execute(select(ClubAchievementUnlock.achievement_key).where(ClubAchievementUnlock.user_id == uid))).scalars().all())
         tasks = (await session.execute(select(ClubTaskConfig).where(ClubTaskConfig.active.is_(True)))).scalars().all()
         level_order = await _club_level_order(session)
         user_level = await _club_user_level_index(session, uid)
@@ -1541,19 +1541,19 @@ async def club_activities(user: dict = Depends(current_user)):
         task_data = []
         for task in tasks:
             required_level = str(task.min_level or "MEMBER").upper()
-            unlocked = level_order.get(required_level, 0) <= user_level
+            task_unlocked = level_order.get(required_level, 0) <= user_level
             # Secret tasks are not disclosed until the user reaches their required rank.
-            if not unlocked and bool(task.secret):
+            if not task_unlocked and bool(task.secret):
                 continue
-            if unlocked:
+            if task_unlocked:
                 start, _period_key = _club_period(task, datetime.utcnow())
                 count = await _club_task_count(session, uid, task, start)
             else:
                 count = 0
             task_data.append({"key": task.key, "title": task.title, "description": task.description, "period": task.period,
-                "target": int(task.target), "reward": int(task.reward) if unlocked else 0,
-                "progress": min(count, int(task.target)), "completed": unlocked and count >= int(task.target),
-                "unlocked": unlocked, "required_level": level_titles.get(required_level, required_level)})
+                "target": int(task.target), "reward": int(task.reward) if task_unlocked else 0,
+                "progress": min(count, int(task.target)), "completed": task_unlocked and count >= int(task.target),
+                "unlocked": task_unlocked, "required_level": level_titles.get(required_level, required_level)})
         config = await _club_config(session)
         metrics = await _club_metrics(session, uid)
         account = await session.get(ClubAccount, uid)
@@ -1596,7 +1596,7 @@ async def club_activities(user: dict = Depends(current_user)):
         ))).scalars().all()
         equipped_by_kind = {x.kind: x.cosmetic_key for x in loadout}
         await session.commit()
-        return {"achievements": [{**item, "unlocked": item["key"] in unlocked}
+        return {"achievements": [{**item, "unlocked": item["key"] in unlocked_achievements}
                     for item in config.get("achievements", CLUB_ACHIEVEMENTS) if item.get("active", True)],
                 "tasks": task_data, "selected_title": selected.title_key if selected else None,
                 "cosmetics": [{"key": c.key, "kind": c.kind, "title": c.title, "description": c.description,
