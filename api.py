@@ -37,7 +37,9 @@ SITE_KEY = os.getenv("DDOS_GUARD_SITE_KEY", "").strip()
 PRIVATE_KEY = os.getenv("DDOS_GUARD_SECRET_KEY", "").strip()
 VERIFY_URL = os.getenv("DDOS_GUARD_VERIFY_URL", "https://captcha.ddos-guard.net/siteverify").strip()
 SESSION_SECRET = os.getenv("DDOS_GUARD_SESSION_SECRET", "").strip()
-SESSION_TTL = max(3600, int(os.getenv("DDOS_GUARD_SESSION_TTL_SECONDS", "2592000")))
+CAPTCHA_INTERVAL = 7 * 24 * 60 * 60
+SESSION_TTL = CAPTCHA_INTERVAL
+_captcha_forced_until: dict[int, float] = {}
 CLUB_DCP_PER_RUBLE = 100
 CLUB_MIN_ORDER = 500
 CLUB_REDEMPTION_TIERS = (
@@ -228,6 +230,7 @@ async def _migrate_legacy_columns() -> None:
         ("orders", "dcp_spent", "INTEGER DEFAULT 0"),
         ("orders", "club_discount", "REAL DEFAULT 0"),
         ("users", "is_banned", "INTEGER DEFAULT 0"),
+        ("users", "last_captcha_at", "TIMESTAMP"),
         ("users", "is_unreachable", "INTEGER DEFAULT 0"),
         ("club_accounts", "orders_adjustment", "INTEGER DEFAULT 0"),
         ("club_accounts", "referrals_adjustment", "INTEGER DEFAULT 0"),
@@ -329,12 +332,25 @@ async def api_security(request: Request, call_next):
         return await call_next(request)
     now = time.monotonic()
     ip = request.client.host if request.client else "unknown"
+    captcha_payload = None
     if SITE_KEY and PRIVATE_KEY and path not in CAPTCHA_EXEMPT:
-        payload = verify_init_data(request.headers.get("X-Init-Data", ""))
-        if not payload or not _captcha_valid(request.cookies.get(COOKIE_NAME), payload["id"]):
-            response = JSONResponse(status_code=428, content={"detail": "CAPTCHA_REQUIRED"})
-            response.delete_cookie(COOKIE_NAME, path="/", secure=True, httponly=True, samesite="none")
-            return response
+        captcha_payload = verify_init_data(request.headers.get("X-Init-Data", ""))
+        if not captcha_payload:
+            return JSONResponse(status_code=428, content={"detail": "CAPTCHA_REQUIRED"})
+        user_id = int(captcha_payload["id"])
+        forced_until = _captcha_forced_until.get(user_id, 0.0)
+        if forced_until <= now:
+            _captcha_forced_until.pop(user_id, None)
+            forced_until = 0.0
+        async with SessionLocal() as session:
+            captcha_user = await session.get(User, user_id)
+            verified_at = captcha_user.last_captcha_at if captcha_user else None
+        recently_verified = False
+        if verified_at:
+            verified_epoch = verified_at.replace(tzinfo=timezone.utc).timestamp() if verified_at.tzinfo is None else verified_at.timestamp()
+            recently_verified = time.time() - verified_epoch < CAPTCHA_INTERVAL
+        if not recently_verified or forced_until > now:
+            return JSONResponse(status_code=428, content={"detail": "CAPTCHA_REQUIRED"})
     if SITE_KEY and PRIVATE_KEY and request.method == "POST" and path == "/api/cart/add":
         bucket = _cart_adds[ip]
         while bucket and now - bucket[0] > SUSPICIOUS_WINDOW:
@@ -342,9 +358,9 @@ async def api_security(request: Request, call_next):
         bucket.append(now)
         if len(bucket) > SUSPICIOUS_ADDS:
             bucket.clear()
-            response = JSONResponse(status_code=428, content={"detail": "CAPTCHA_REQUIRED"})
-            response.delete_cookie(COOKIE_NAME, path="/", secure=True, httponly=True, samesite="none")
-            return response
+            if captcha_payload:
+                _captcha_forced_until[int(captcha_payload["id"])] = now + 900
+            return JSONResponse(status_code=428, content={"detail": "CAPTCHA_REQUIRED"})
     bucket = _requests[ip]
     while bucket and now - bucket[0] > RATE_WINDOW:
         bucket.popleft()
@@ -398,7 +414,13 @@ async def captcha_config():
 
 @app.get("/api/captcha/status")
 async def captcha_status(request: Request, user: dict = Depends(current_user)):
-    return {"verified": _captcha_valid(request.cookies.get(COOKIE_NAME), user["id"])}
+    async with SessionLocal() as session:
+        record = await session.get(User, user["id"])
+        verified_at = record.last_captcha_at if record else None
+    if not verified_at:
+        return {"verified": False}
+    verified_epoch = verified_at.replace(tzinfo=timezone.utc).timestamp() if verified_at.tzinfo is None else verified_at.timestamp()
+    return {"verified": time.time() - verified_epoch < CAPTCHA_INTERVAL}
 
 
 @app.post("/api/captcha/verify")
@@ -415,8 +437,17 @@ async def captcha_verify(data: dict, response: Response, user: dict = Depends(cu
         raise HTTPException(503, "Не удалось проверить CAPTCHA. Попробуй ещё раз.")
     if valid.get("success") is not True:
         raise HTTPException(400, "CAPTCHA не пройдена. Попробуй ещё раз.")
-    expires = int(time.time()) + SESSION_TTL
-    response.set_cookie(COOKIE_NAME, _captcha_session(user["id"], expires), max_age=SESSION_TTL, httponly=True, secure=True, samesite="none", path="/")
+    verified_at = datetime.now(timezone.utc)
+    async with SessionLocal() as session:
+        record = await session.get(User, user["id"])
+        if record is None:
+            record = User(id=user["id"], username=user.get("username") or user.get("first_name") or "Пользователь")
+            session.add(record)
+        record.last_captcha_at = verified_at
+        await session.commit()
+    _captcha_forced_until.pop(int(user["id"]), None)
+    expires = int(time.time()) + CAPTCHA_INTERVAL
+    response.set_cookie(COOKIE_NAME, _captcha_session(user["id"], expires), max_age=CAPTCHA_INTERVAL, httponly=True, secure=True, samesite="none", path="/")
     return {"ok": True, "expires_at": expires}
 
 
