@@ -3111,6 +3111,8 @@ async def admin_user_unban(user_id: int, user: dict = Depends(admin_user)):
 
 @app.post("/api/admin/users/{user_id}/reset")
 async def admin_user_reset(user_id: int, user: dict = Depends(admin_user)):
+    if user_id == ADMIN_ID:
+        raise HTTPException(400, "Нельзя сбросить статистику администратора.")
     async with SessionLocal() as session:
         u = await session.get(User, user_id)
         if not u:
