@@ -10,7 +10,7 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramNetworkError, Tel
 from aiogram.filters import Command, CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo, CallbackQuery, FSInputFile
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 from config import ADMIN_ID, BOT_TOKEN, MINIAPP_URL, REVIEWS_CHANNEL_ID
 from database.db import SessionLocal
@@ -518,20 +518,33 @@ def _register_handlers(dp: Dispatcher) -> None:
                 if not review:
                     await callback.answer("Отзыв не найден.", show_alert=True)
                     return
-                if review.status != "pending":
-                    await callback.answer("Этот отзыв уже обработан.", show_alert=True)
-                    return
                 if decision == "reject":
-                    review.status = "rejected"
+                    changed = await session.execute(
+                        update(Review)
+                        .where(Review.id == review_id, Review.status == "pending")
+                        .values(status="rejected")
+                    )
+                    if changed.rowcount != 1:
+                        await callback.answer("Этот отзыв уже обработан.", show_alert=True)
+                        return
                     await session.commit()
                     await callback.message.edit_reply_markup(reply_markup=None)
                     await callback.message.answer(f"❌ Отзыв №{review_id} отклонён.")
                     await callback.answer("Отзыв отклонён")
                     return
+                claimed = await session.execute(
+                    update(Review)
+                    .where(Review.id == review_id, Review.status == "pending")
+                    .values(status="publishing")
+                )
+                if claimed.rowcount != 1:
+                    await callback.answer("Этот отзыв уже обрабатывается или опубликован.", show_alert=True)
+                    return
                 buyer = await session.get(User, review.user_id)
                 username = buyer.username if buyer else None
                 order_id, rating, review_text = review.order_id, review.rating, review.text or ""
                 photo_path = str(Path("data/uploads/reviews") / Path(review.photo_id).name) if review.has_photo and review.photo_id else None
+                await session.commit()
             published = await publish_review(
                 f"💨 DEAD SMOKE STORE | ОТЗЫВЫ ПОКУПАТЕЛЕЙ\n\n"
                 f"⭐ Оценка: {'★' * rating}{'☆' * (5-rating)}\n"
@@ -541,14 +554,24 @@ def _register_handlers(dp: Dispatcher) -> None:
                 f"DEAD SMOKE STORE",
                 photo_path=photo_path,
             )
+            async with SessionLocal() as session:
+                if published:
+                    await session.execute(
+                        update(Review)
+                        .where(Review.id == review_id, Review.status == "publishing")
+                        .values(status="published", published_at=datetime.utcnow())
+                    )
+                    await session.commit()
+                else:
+                    await session.execute(
+                        update(Review)
+                        .where(Review.id == review_id, Review.status == "publishing")
+                        .values(status="pending")
+                    )
+                    await session.commit()
             if not published:
                 await callback.answer("Не удалось опубликовать. Проверь права бота и ID канала.", show_alert=True)
                 return
-            async with SessionLocal() as session:
-                review = await session.get(Review, review_id)
-                if review and review.status == "pending":
-                    review.status = "published"
-                    await session.commit()
             await callback.message.edit_reply_markup(reply_markup=None)
             await callback.message.answer(f"✅ Отзыв №{review_id} опубликован в @OTZOV_DSS.")
             await callback.answer("Опубликовано")
