@@ -1326,13 +1326,13 @@ async def _sync_club_achievements(session, user_id: int) -> list[str]:
             continue
         if metrics[item["metric"]] < item["target"]:
             continue
-        exists = (await session.execute(select(ClubAchievementUnlock.id).where(
-            ClubAchievementUnlock.user_id == user_id, ClubAchievementUnlock.achievement_key == item["key"]
-        ))).first()
-        if exists:
+        try:
+            async with session.begin_nested():
+                session.add(ClubAchievementUnlock(user_id=user_id, achievement_key=item["key"]))
+                await session.flush()
+        except IntegrityError:
+            # A parallel request already unlocked this achievement.
             continue
-        session.add(ClubAchievementUnlock(user_id=user_id, achievement_key=item["key"]))
-        await session.flush()
         amount = await _award_club_dcp(session, user_id, item["reward"], f"achievement:{item['key']}:{user_id}", f"Достижение: {item['title']}")
         reward_text = f" · +{amount} DCP" if amount else ""
         messages.append(f"🏆 Достижение открыто: {item['title']}{reward_text}")
@@ -1386,12 +1386,34 @@ async def _sync_club_tasks(session, user_id: int) -> list[str]:
             ClubTaskProgress.user_id == user_id, ClubTaskProgress.task_key == task.key, ClubTaskProgress.period_key == period_key
         ))).scalar_one_or_none()
         if progress is None:
-            progress = ClubTaskProgress(user_id=user_id, task_key=task.key, period_key=period_key, progress=0, claimed=False)
-            session.add(progress)
-            await session.flush()
-        progress.progress = min(count, int(task.target))
-        if progress.progress >= int(task.target) and not progress.claimed:
-            progress.claimed = True
+            try:
+                async with session.begin_nested():
+                    session.add(ClubTaskProgress(user_id=user_id, task_key=task.key, period_key=period_key, progress=0, claimed=False))
+                    await session.flush()
+            except IntegrityError:
+                # Another request created this user's period row first.
+                pass
+        await session.execute(
+            update(ClubTaskProgress)
+            .where(
+                ClubTaskProgress.user_id == user_id,
+                ClubTaskProgress.task_key == task.key,
+                ClubTaskProgress.period_key == period_key,
+            )
+            .values(progress=min(count, int(task.target)))
+        )
+        claimed = await session.execute(
+            update(ClubTaskProgress)
+            .where(
+                ClubTaskProgress.user_id == user_id,
+                ClubTaskProgress.task_key == task.key,
+                ClubTaskProgress.period_key == period_key,
+                ClubTaskProgress.claimed.is_(False),
+                ClubTaskProgress.progress >= int(task.target),
+            )
+            .values(claimed=True)
+        )
+        if claimed.rowcount == 1:
             amount = await _award_club_dcp(session, user_id, int(task.reward),
                 f"task:{task.key}:{period_key}:{user_id}", f"Задание: {task.title}")
             economy = (await _club_config(session)).get("economy", {})
