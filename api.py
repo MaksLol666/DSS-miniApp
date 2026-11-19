@@ -1689,6 +1689,8 @@ async def _ensure_season(session, now: datetime | None = None):
 
 
 async def _award_season_points(session, user_id: int, amount: int, event_key: str, reason: str) -> int:
+    # DSS CLUB seasons are paused until the store reaches its first 50 customers.
+    return 0
     if amount <= 0:
         return 0
     season, active = await _ensure_season(session)
@@ -2065,6 +2067,10 @@ async def admin_club_config(user: dict = Depends(admin_user)):
     async with SessionLocal() as session:
         config = await _club_config(session)
         await session.commit()
+        config.pop("season", None)
+        economy = config.get("economy", {})
+        for key in ("order_sp", "referral_sp", "daily_task_sp", "weekly_task_sp"):
+            economy.pop(key, None)
         return config
 
 
@@ -2290,6 +2296,7 @@ async def admin_club_revoke_cosmetic(user_id: int, cosmetic_key: str, user: dict
 
 @app.post("/api/admin/club/users/{user_id}/season-points")
 async def admin_club_adjust_season_points(user_id: int, data: dict, user: dict = Depends(admin_user)):
+    raise HTTPException(404, "Сезоны DSS CLUB временно отключены.")
     delta = int(data.get("amount", 0))
     reason = str(data.get("reason", "")).strip()[:160]
     if not delta or abs(delta) > 10000000 or not reason:
@@ -2566,6 +2573,7 @@ async def club_cosmetic_image(filename: str):
 
 @app.get("/api/club/season")
 async def club_season(user: dict = Depends(current_user)):
+    raise HTTPException(404, "Сезоны DSS CLUB временно отключены.")
     uid = user["id"]
     now = datetime.utcnow()
     async with SessionLocal() as session:
